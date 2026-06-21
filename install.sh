@@ -2,7 +2,7 @@
 # Download and install the latest uc release for the current platform.
 set -eu
 
-REPO=${UC_REPO:-wso2-cs/utilscli}
+REPO=${UC_REPO:-pavinduLakshan/utilscli}
 BIN_DIR=${UC_BIN_DIR:-"$HOME/.local/bin"}
 
 case "$(uname -s)" in
