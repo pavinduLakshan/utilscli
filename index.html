@@ -20,6 +20,8 @@
     .copy-command { position: absolute; right: 12px; bottom: 12px; padding: 3px 7px; border: 1px solid #484f58; border-radius: 6px; background: #21262d; color: #e6edf3; cursor: pointer; font: .75rem ui-sans-serif, system-ui, sans-serif; opacity: 0; transition: opacity .15s ease, background .15s ease; }
     .tool:hover .copy-command, .tool:focus-within .copy-command { opacity: 1; }
     .copy-command:hover { background: #30363d; }
+    .install-command { position: relative; }
+    .install-command .copy-command { top: 10px; right: 10px; bottom: auto; padding: 4px 8px; font-size: 1rem; opacity: 1; }
     .note { padding: 14px 16px; border-left: 3px solid #58a6ff; background: #161b22; border-radius: 0 8px 8px 0; }
     a { color: #58a6ff; }
   </style>
@@ -33,7 +35,10 @@
 
   <section>
     <h2>Install</h2>
-    <pre><code>curl -fsSL https://raw.githubusercontent.com/pavinduLakshan/utilscli/main/install.sh | sh</code></pre>
+    <div class="install-command">
+      <pre><code id="install-script">curl -fsSL https://raw.githubusercontent.com/pavinduLakshan/utilscli/main/install.sh | sh</code></pre>
+      <button class="copy-command" type="button" data-copy-target="install-script" aria-label="Copy install command" title="Copy install command">⧉</button>
+    </div>
     <p>The installer downloads the correct binary from the latest GitHub release, installs it to <code>~/.local/bin</code>, and adds that location to your shell startup file when needed. Open a new terminal afterwards.</p>
     <pre><code>uc 'base64 osidosodi'
 # b3NpZG9zb2Rp</code></pre>
@@ -68,6 +73,25 @@
     </div>
   </section>
   <script>
+    async function copyCommand(command, button, normalLabel) {
+      try {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(command);
+        } else {
+          const input = document.createElement('textarea');
+          input.value = command;
+          document.body.append(input);
+          input.select();
+          document.execCommand('copy');
+          input.remove();
+        }
+        button.textContent = '✓';
+      } catch {
+        button.textContent = '×';
+      }
+      setTimeout(() => { button.textContent = normalLabel; }, 1400);
+    }
+
     document.querySelectorAll('.tool > code').forEach((example) => {
       const button = document.createElement('button');
       button.className = 'copy-command';
@@ -75,26 +99,14 @@
       button.textContent = 'Copy';
       button.setAttribute('aria-label', 'Copy command');
       button.addEventListener('click', async () => {
-        const command = example.textContent;
-        try {
-          if (navigator.clipboard) {
-            await navigator.clipboard.writeText(command);
-          } else {
-            const input = document.createElement('textarea');
-            input.value = command;
-            document.body.append(input);
-            input.select();
-            document.execCommand('copy');
-            input.remove();
-          }
-          button.textContent = 'Copied!';
-          setTimeout(() => { button.textContent = 'Copy'; }, 1400);
-        } catch {
-          button.textContent = 'Failed';
-          setTimeout(() => { button.textContent = 'Copy'; }, 1400);
-        }
+        copyCommand(example.textContent, button, 'Copy');
       });
       example.after(button);
+    });
+
+    document.querySelectorAll('[data-copy-target]').forEach((button) => {
+      const target = document.getElementById(button.dataset.copyTarget);
+      button.addEventListener('click', () => copyCommand(target.textContent, button, '⧉'));
     });
   </script>
 </body>
