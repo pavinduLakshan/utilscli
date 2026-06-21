@@ -23,6 +23,9 @@
     .install-command { position: relative; }
     .install-command .copy-command { top: 10px; right: 10px; bottom: auto; padding: 4px 8px; font-size: 1rem; opacity: 1; }
     .note { padding: 14px 16px; border-left: 3px solid #58a6ff; background: #161b22; border-radius: 0 8px 8px 0; }
+    .command-search { width: 100%; box-sizing: border-box; margin: 0 0 1rem; padding: .7rem .85rem; border: 1px solid #30363d; border-radius: 8px; background: #161b22; color: #e6edf3; font: inherit; }
+    .command-search:focus { outline: 2px solid #58a6ff; outline-offset: 2px; }
+    .search-status { min-height: 1.55em; margin: -.55rem 0 1rem; color: #8b949e; font-size: .9rem; }
     a { color: #58a6ff; }
   </style>
 </head>
@@ -47,7 +50,9 @@
 
   <section>
     <h2>Available commands</h2>
-    <div class="tool-grid">
+    <input id="command-search" class="command-search" type="search" placeholder="Search commands…" aria-label="Search available commands">
+    <p id="search-status" class="search-status" aria-live="polite"></p>
+    <div id="tool-grid" class="tool-grid">
       <article class="tool"><h3>b64-encode</h3><p>Encode text as Unicode-safe Base64.</p><code>uc b64-encode "hello"</code></article>
       <article class="tool"><h3>b64-decode</h3><p>Decode padded or unpadded Base64 text.</p><code>uc b64-decode aGVsbG8</code></article>
       <article class="tool"><h3>b64url-encode</h3><p>Encode URL-safe Base64 without padding.</p><code>uc b64url-encode "hello"</code></article>
@@ -107,6 +112,25 @@
     document.querySelectorAll('[data-copy-target]').forEach((button) => {
       const target = document.getElementById(button.dataset.copyTarget);
       button.addEventListener('click', () => copyCommand(target.textContent, button, '⧉'));
+    });
+
+    const commandSearch = document.getElementById('command-search');
+    const tools = [...document.querySelectorAll('#tool-grid .tool')];
+    const searchStatus = document.getElementById('search-status');
+
+    commandSearch.addEventListener('input', () => {
+      const query = commandSearch.value.trim().toLowerCase();
+      let matches = 0;
+
+      tools.forEach((tool) => {
+        const matchesQuery = tool.textContent.toLowerCase().includes(query);
+        tool.hidden = !matchesQuery;
+        if (matchesQuery) matches += 1;
+      });
+
+      searchStatus.textContent = query
+        ? `${matches} command${matches === 1 ? '' : 's'} found`
+        : '';
     });
   </script>
 </body>
