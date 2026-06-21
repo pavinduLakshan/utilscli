@@ -3,16 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>uc — CS Tools for your terminal</title>
+  <title>Utils CLI — Terminal native developer toolbox</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
     body { max-width: 900px; margin: 0 auto; padding: 56px 24px; line-height: 1.55; }
-    h1 { font-size: clamp(2.4rem, 8vw, 4.5rem); letter-spacing: -.06em; margin: 0; }
+    h1 { font-size: clamp(2.4rem, 8vw, 4.5rem); margin: 0; }
     h2 { margin-top: 3rem; font-size: 1.35rem; }
     .tagline { color: #8b949e; font-size: 1.2rem; margin: .25rem 0 2rem; }
     code, pre { font: .9rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
     pre { overflow-x: auto; padding: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
-    .pill { display: inline-block; margin: .2rem .2rem .2rem 0; padding: .2rem .55rem; border: 1px solid #30363d; border-radius: 999px; background: #161b22; }
+    .tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 12px; }
+    .tool { position: relative; padding: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+    .tool h3 { margin: 0; font: 600 1rem ui-monospace, SFMono-Regular, Menlo, monospace; color: #79c0ff; }
+    .tool p { min-height: 3.1em; margin: .55rem 0; color: #c9d1d9; }
+    .tool > code { display: block; overflow-x: auto; padding-right: 50px; color: #a5d6ff; white-space: nowrap; }
+    .copy-command { position: absolute; right: 12px; bottom: 12px; padding: 3px 7px; border: 1px solid #484f58; border-radius: 6px; background: #21262d; color: #e6edf3; cursor: pointer; font: .75rem ui-sans-serif, system-ui, sans-serif; opacity: 0; transition: opacity .15s ease, background .15s ease; }
+    .tool:hover .copy-command, .tool:focus-within .copy-command { opacity: 1; }
+    .copy-command:hover { background: #30363d; }
     .note { padding: 14px 16px; border-left: 3px solid #58a6ff; background: #161b22; border-radius: 0 8px 8px 0; }
     a { color: #58a6ff; }
   </style>
@@ -20,8 +27,8 @@
 <body>
   <header>
     <h1>Utils CLI</h1>
-    <p class="tagline">The WSO2 CS utility toolbox, made terminal-native.</p>
-    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Common natural-language requests work locally; ambiguous requests can use your existing Claude Code login to select a safe local tool.</p>
+    <p class="tagline">The terminal-native day-today utility toolbox for developers.</p>
+    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Run <code>uc</code> for a natural-language prompt, or <code>uc --help</code> to list the available tools.</p>
   </header>
 
   <section>
@@ -35,27 +42,60 @@
 
   <section>
     <h2>Available commands</h2>
-    <h3>Encode and decode</h3>
-    <p><span class="pill">b64-encode</span><span class="pill">b64-decode</span><span class="pill">b64url-encode</span><span class="pill">b64url-decode</span><span class="pill">url-encode</span><span class="pill">url-decode</span><span class="pill">html-encode</span><span class="pill">html-decode</span><span class="pill">jwt</span><span class="pill">saml</span></p>
-
-    <h3>Format</h3>
-    <p><span class="pill">json-pretty</span><span class="pill">json-minify</span><span class="pill">xml-pretty</span><span class="pill">xml-minify</span></p>
-
-    <h3>Generate</h3>
-    <p><span class="pill">hash</span><span class="pill">uuid</span><span class="pill">password</span></p>
-
-    <h3>Utilities</h3>
-    <p><span class="pill">timestamp</span><span class="pill">regex</span><span class="pill">diff</span><span class="pill">http</span><span class="pill">cors</span></p>
+    <div class="tool-grid">
+      <article class="tool"><h3>b64-encode</h3><p>Encode text as Unicode-safe Base64.</p><code>uc b64-encode "hello"</code></article>
+      <article class="tool"><h3>b64-decode</h3><p>Decode padded or unpadded Base64 text.</p><code>uc b64-decode aGVsbG8</code></article>
+      <article class="tool"><h3>b64url-encode</h3><p>Encode URL-safe Base64 without padding.</p><code>uc b64url-encode "hello"</code></article>
+      <article class="tool"><h3>b64url-decode</h3><p>Decode URL-safe Base64 text.</p><code>uc b64url-decode aGVsbG8</code></article>
+      <article class="tool"><h3>url-encode</h3><p>Percent-encode a URL component using RFC 3986 rules.</p><code>uc url-encode "hello world"</code></article>
+      <article class="tool"><h3>url-decode</h3><p>Decode a percent-encoded URL component.</p><code>uc url-decode hello%20world</code></article>
+      <article class="tool"><h3>html-encode</h3><p>Escape HTML special characters.</p><code>uc html-encode '&lt;a href="/"&gt;'</code></article>
+      <article class="tool"><h3>html-decode</h3><p>Decode common HTML entities.</p><code>uc html-decode '&amp;lt;hello&amp;gt;'</code></article>
+      <article class="tool"><h3>jwt</h3><p>Decode a JWT header and payload without verifying its signature.</p><code>uc jwt '&lt;header&gt;.&lt;payload&gt;.&lt;signature&gt;'</code></article>
+      <article class="tool"><h3>saml</h3><p>Decode Base64 SAML XML, including Redirect-binding deflate.</p><code>uc saml '&lt;base64-saml-message&gt;'</code></article>
+      <article class="tool"><h3>json-pretty</h3><p>Validate and indent JSON.</p><code>uc json-pretty '{"enabled":true}'</code></article>
+      <article class="tool"><h3>json-minify</h3><p>Validate JSON and remove insignificant whitespace.</p><code>uc json-minify '{ "enabled": true }'</code></article>
+      <article class="tool"><h3>xml-pretty</h3><p>Validate and indent XML.</p><code>uc xml-pretty '&lt;root&gt;&lt;item&gt;one&lt;/item&gt;&lt;/root&gt;'</code></article>
+      <article class="tool"><h3>xml-minify</h3><p>Validate XML and remove whitespace-only text nodes.</p><code>uc xml-minify '&lt;root&gt;  &lt;item&gt;one&lt;/item&gt; &lt;/root&gt;'</code></article>
+      <article class="tool"><h3>hash</h3><p>Generate MD5, SHA-1, SHA-256, and SHA-512 hashes.</p><code>uc hash "hello"</code></article>
+      <article class="tool"><h3>uuid</h3><p>Generate a version 4 UUID; supports <code>--count</code> up to 100.</p><code>uc uuid --count 3</code></article>
+      <article class="tool"><h3>password</h3><p>Generate a random password; supports <code>--length</code> and <code>--symbols</code>.</p><code>uc password --length 24 --symbols</code></article>
+      <article class="tool"><h3>timestamp</h3><p>Convert a Unix timestamp or an RFC 3339 date.</p><code>uc timestamp 1710000000</code></article>
+      <article class="tool"><h3>regex</h3><p>Find matches; pipe PATTERN and TEXT separated by a newline.</p><code>printf 'foo\nfoo bar' | uc regex</code></article>
+      <article class="tool"><h3>diff</h3><p>Compare left and right text separated by a line containing <code>---</code>.</p><code>printf 'before\n---\nafter' | uc diff</code></article>
+      <article class="tool"><h3>http</h3><p>Look up an HTTP status code and reason phrase.</p><code>uc http 404</code></article>
+      <article class="tool"><h3>cors</h3><p>Generate Access-Control response headers from flags.</p><code>uc cors --origin https://app.example.com --credentials</code></article>
+    </div>
   </section>
-
-  <section>
-    <h2>Examples</h2>
-    <pre><code>uc json-pretty '{"account":"wso2","active":true}'
-printf '%s' 'aGVsbG8=' | uc b64-decode
-uc hash 'important text'
-uc http 429
-uc password --length 24 --symbols
-uc cors --origin https://app.example.com --credentials</code></pre>
-  </section>
+  <script>
+    document.querySelectorAll('.tool > code').forEach((example) => {
+      const button = document.createElement('button');
+      button.className = 'copy-command';
+      button.type = 'button';
+      button.textContent = 'Copy';
+      button.setAttribute('aria-label', 'Copy command');
+      button.addEventListener('click', async () => {
+        const command = example.textContent;
+        try {
+          if (navigator.clipboard) {
+            await navigator.clipboard.writeText(command);
+          } else {
+            const input = document.createElement('textarea');
+            input.value = command;
+            document.body.append(input);
+            input.select();
+            document.execCommand('copy');
+            input.remove();
+          }
+          button.textContent = 'Copied!';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1400);
+        } catch {
+          button.textContent = 'Failed';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1400);
+        }
+      });
+      example.after(button);
+    });
+  </script>
 </body>
 </html>

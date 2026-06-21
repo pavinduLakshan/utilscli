@@ -38,7 +38,10 @@ func main() {
 
 // run parses arguments, resolves a utility, and writes that utility's result.
 func run(args []string, in io.Reader, out io.Writer) error {
-	if len(args) == 0 || isHelp(args[0]) {
+	if len(args) == 0 {
+		return runInteractive(in, out)
+	}
+	if isHelp(args[0]) {
 		fmt.Fprint(out, strings.TrimPrefix(usage, ""))
 		return nil
 	}
@@ -52,10 +55,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	if command == "" {
 		prompt := strings.TrimSpace(strings.Join(args, " "))
 		var err error
-		command, commandArgs, err = routePrompt(prompt)
-		if err != nil {
-			command, commandArgs, err = routeWithClaudeCode(prompt)
-		}
+		command, commandArgs, err = resolvePrompt(prompt)
 		if err != nil {
 			return err
 		}
@@ -79,25 +79,51 @@ Usage:
   uc <command> [input]       Run an explicit utility (or pipe input through stdin)
   uc "<request>"             Ask naturally: uc "base64 hello" or uc "pretty JSON {\"a\":1}"
 
-Encode/decode: b64-encode, b64-decode, b64url-encode, b64url-decode,
-               url-encode, url-decode, html-encode, html-decode, jwt, saml
-Format:        json-pretty, json-minify, xml-pretty, xml-minify
-Generate:      hash, uuid, password
-Utilities:     timestamp, regex, diff, http, cors
-
-Examples:
-  uc b64-encode "osidosodi"
-  printf '%s' 'eyJmb28iOiJiYXIifQ' | uc b64-decode
-  uc 'base64 osidosodi'
-  uc 'decode this URL hello%20world'
-  uc json-pretty '{"a":1}'
-  uc jwt '<header>.<payload>.<signature>'
-  uc password --length 24 --symbols
-
-AI routing:
-  The built-in router handles common requests locally. For ambiguous language,
-  uc uses your existing Claude Code login in non-interactive mode. Install and
-  authenticate Claude Code first; no API key or model option is required here.
+Tools:
+  b64-encode      Encode text as Unicode-safe Base64.
+                  uc b64-encode "hello"
+  b64-decode      Decode padded or unpadded Base64 text.
+                  uc b64-decode aGVsbG8
+  b64url-encode   Encode URL-safe Base64 without padding.
+                  uc b64url-encode "hello"
+  b64url-decode   Decode URL-safe Base64 text.
+                  uc b64url-decode aGVsbG8
+  url-encode      Percent-encode a URL component using RFC 3986 rules.
+                  uc url-encode "hello world"
+  url-decode      Decode a percent-encoded URL component.
+                  uc url-decode hello%20world
+  html-encode     Escape HTML special characters.
+                  uc html-encode '<a href="/">'
+  html-decode     Decode common HTML entities.
+                  uc html-decode '&lt;hello&gt;'
+  jwt             Decode a JWT header and payload; does not verify its signature.
+                  uc jwt '<header>.<payload>.<signature>'
+  saml            Decode Base64 SAML XML, including Redirect-binding deflate.
+                  uc saml '<base64-saml-message>'
+  json-pretty     Validate and indent JSON.
+                  uc json-pretty '{"enabled":true}'
+  json-minify     Validate JSON and remove insignificant whitespace.
+                  uc json-minify '{ "enabled": true }'
+  xml-pretty      Validate and indent XML.
+                  uc xml-pretty '<root><item>one</item></root>'
+  xml-minify      Validate XML and remove whitespace-only text nodes.
+                  uc xml-minify '<root>  <item>one</item> </root>'
+  hash            Generate MD5, SHA-1, SHA-256, and SHA-512 hashes.
+                  uc hash "hello"
+  uuid            Generate a version 4 UUID; supports --count up to 100.
+                  uc uuid --count 3
+  password        Generate a random password; supports --length and --symbols.
+                  uc password --length 24 --symbols
+  timestamp       Convert a Unix timestamp or an RFC 3339 date.
+                  uc timestamp 1710000000
+  regex           Find matches; pipe PATTERN and TEXT separated by a newline.
+                  printf 'foo\nfoo bar' | uc regex
+  diff            Compare left and right text separated by a line containing ---.
+                  printf 'before\n---\nafter' | uc diff
+  http            Look up an HTTP status code and reason phrase.
+                  uc http 404
+  cors            Generate Access-Control response headers from flags.
+                  uc cors --origin https://app.example.com --credentials
 `
 
 // isHelp reports whether an argument requests the built-in help text.

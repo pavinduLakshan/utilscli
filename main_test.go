@@ -71,3 +71,15 @@ func TestParseClaudeResponse(t *testing.T) {
 		t.Fatalf("unexpected routing result: %q %#v", command, args)
 	}
 }
+
+// TestInteractiveMenu verifies natural-language execution from a bare uc invocation.
+func TestInteractiveMenu(t *testing.T) {
+	var out bytes.Buffer
+	input := strings.NewReader("base64 osidosodi\n")
+	if err := run(nil, input, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "What would you like to do?") || !strings.Contains(out.String(), "b3NpZG9zb2Rp") {
+		t.Fatalf("interactive output did not include the prompt and encoded result: %q", out.String())
+	}
+}
