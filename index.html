@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>uc — CS Tools for your terminal</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+    body { max-width: 900px; margin: 0 auto; padding: 56px 24px; line-height: 1.55; }
+    h1 { font-size: clamp(2.4rem, 8vw, 4.5rem); letter-spacing: -.06em; margin: 0; }
+    h2 { margin-top: 3rem; font-size: 1.35rem; }
+    .tagline { color: #8b949e; font-size: 1.2rem; margin: .25rem 0 2rem; }
+    code, pre { font: .9rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { overflow-x: auto; padding: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+    .pill { display: inline-block; margin: .2rem .2rem .2rem 0; padding: .2rem .55rem; border: 1px solid #30363d; border-radius: 999px; background: #161b22; }
+    .note { padding: 14px 16px; border-left: 3px solid #58a6ff; background: #161b22; border-radius: 0 8px 8px 0; }
+    a { color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Utils CLI</h1>
+    <p class="tagline">The WSO2 CS utility toolbox, made terminal-native.</p>
+    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Common natural-language requests work locally; ambiguous requests can use your existing Claude Code login to select a safe local tool.</p>
+  </header>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/pavinduLakshan/utilscli/main/install.sh | sh</code></pre>
+    <p>The installer downloads the correct binary from the latest GitHub release, installs it to <code>~/.local/bin</code>, and adds that location to your shell startup file when needed. Open a new terminal afterwards.</p>
+    <pre><code>uc 'base64 osidosodi'
+# b3NpZG9zb2Rp</code></pre>
+    <p class="note">For AI-assisted routing, install and log in to <a href="https://docs.anthropic.com/en/docs/claude-code/getting-started">Claude Code</a>. <code>uc</code> does not require an API key or model setting.</p>
+  </section>
+
+  <section>
+    <h2>Available commands</h2>
+    <h3>Encode and decode</h3>
+    <p><span class="pill">b64-encode</span><span class="pill">b64-decode</span><span class="pill">b64url-encode</span><span class="pill">b64url-decode</span><span class="pill">url-encode</span><span class="pill">url-decode</span><span class="pill">html-encode</span><span class="pill">html-decode</span><span class="pill">jwt</span><span class="pill">saml</span></p>
+
+    <h3>Format</h3>
+    <p><span class="pill">json-pretty</span><span class="pill">json-minify</span><span class="pill">xml-pretty</span><span class="pill">xml-minify</span></p>
+
+    <h3>Generate</h3>
+    <p><span class="pill">hash</span><span class="pill">uuid</span><span class="pill">password</span></p>
+
+    <h3>Utilities</h3>
+    <p><span class="pill">timestamp</span><span class="pill">regex</span><span class="pill">diff</span><span class="pill">http</span><span class="pill">cors</span></p>
+  </section>
+
+  <section>
+    <h2>Examples</h2>
+    <pre><code>uc json-pretty '{"account":"wso2","active":true}'
+printf '%s' 'aGVsbG8=' | uc b64-decode
+uc hash 'important text'
+uc http 429
+uc password --length 24 --symbols
+uc cors --origin https://app.example.com --credentials</code></pre>
+  </section>
+</body>
+</html>
