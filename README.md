@@ -22,4 +22,4 @@ Set `UC_REPO` if you publish the project under a different GitHub repository.
 
 It supports the documented encoders, JSON/XML formatters, JWT and SAML decoding, hashes, UUIDs, passwords, timestamps, regex matching, diff, HTTP status lookup, and CORS headers. Run `uc --help` for the full command list.
 
-Run `uc` with no arguments to open the interactive terminal UI. Type into the editor on the right, choose a tool with the arrow keys at any time, and press Enter to run it. Press Ctrl+J to add a line to the editor and Ctrl+C to exit. Use `uc --help` for the complete command list.
+Run `uc` with no arguments to open the interactive terminal UI. The editor is active first: use the arrow keys to move its visible cursor, press Tab to focus the tool list, and use the arrow keys to choose a tool. Press Enter to run it, Ctrl+J to add a line, and Ctrl+C to exit. Use `uc --help` for the complete command list.

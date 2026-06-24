@@ -40,10 +40,20 @@ var tuiTools = []toolDefinition{
 }
 
 type tuiState struct {
-	selected int
-	input    []rune
-	result   string
+	selected   int
+	input      []rune
+	cursor     int
+	inputWidth int
+	focus      tuiFocus
+	result     string
 }
+
+type tuiFocus int
+
+const (
+	focusEditor tuiFocus = iota
+	focusTools
+)
 
 // runInteractive opens a full-screen terminal UI for a bare uc invocation.
 func runInteractive(in io.Reader, out io.Writer) error {
@@ -64,7 +74,7 @@ func runInteractive(in io.Reader, out io.Writer) error {
 
 	state := tuiState{}
 	for {
-		drawTUI(screen, state)
+		drawTUI(screen, &state)
 		switch event := screen.PollEvent().(type) {
 		case *tcell.EventResize:
 			screen.Sync()
@@ -86,26 +96,53 @@ func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
 	switch event.Key() {
 	case tcell.KeyCtrlC, tcell.KeyEscape:
 		return true
+	case tcell.KeyTAB:
+		if state.focus == focusEditor {
+			state.focus = focusTools
+		} else {
+			state.focus = focusEditor
+		}
 	case tcell.KeyUp:
-		if state.selected > 0 {
+		if state.focus == focusTools && state.selected > 0 {
 			state.selected--
+		} else if state.focus == focusEditor {
+			state.cursor = moveCursorVertical(state.input, state.cursor, -1, state.inputWidth)
 		}
 	case tcell.KeyDown:
-		if state.selected < len(tuiTools)-1 {
+		if state.focus == focusTools && state.selected < len(tuiTools)-1 {
 			state.selected++
+		} else if state.focus == focusEditor {
+			state.cursor = moveCursorVertical(state.input, state.cursor, 1, state.inputWidth)
+		}
+	case tcell.KeyLeft:
+		if state.focus == focusEditor && state.cursor > 0 {
+			state.cursor--
+		}
+	case tcell.KeyRight:
+		if state.focus == focusEditor && state.cursor < len(state.input) {
+			state.cursor++
 		}
 	case tcell.KeyEnter:
 		runSelectedTool(state)
 	case tcell.KeyCtrlJ:
-		state.input = append(state.input, '\n')
+		insertInputRune(state, '\n')
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if len(state.input) > 0 {
-			state.input = state.input[:len(state.input)-1]
+		if state.focus == focusEditor && state.cursor > 0 {
+			state.input = append(state.input[:state.cursor-1], state.input[state.cursor:]...)
+			state.cursor--
 		}
 	case tcell.KeyRune:
-		state.input = append(state.input, event.Rune())
+		state.focus = focusEditor
+		insertInputRune(state, event.Rune())
 	}
 	return false
+}
+
+func insertInputRune(state *tuiState, char rune) {
+	state.input = append(state.input, 0)
+	copy(state.input[state.cursor+1:], state.input[state.cursor:])
+	state.input[state.cursor] = char
+	state.cursor++
 }
 
 func runSelectedTool(state *tuiState) {
@@ -118,7 +155,7 @@ func runSelectedTool(state *tuiState) {
 	state.result = result
 }
 
-func drawTUI(screen tcell.Screen, state tuiState) {
+func drawTUI(screen tcell.Screen, state *tuiState) {
 	width, height := screen.Size()
 	screen.Clear()
 	if width < 60 || height < 14 {
@@ -133,24 +170,32 @@ func drawTUI(screen tcell.Screen, state tuiState) {
 	}
 	rightX := leftWidth + 1
 	rightWidth := width - rightX
+	state.inputWidth = rightWidth - 4
 
 	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorMediumPurple)
 	titleStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorAqua)
 	mutedStyle := tcell.StyleDefault.Foreground(tcell.ColorGray)
-	drawBox(screen, 0, 0, leftWidth, height-2, "Tools", boxStyle)
+	toolsTitle := "Tools"
+	inputTitle := "Input"
+	if state.focus == focusTools {
+		toolsTitle += " (active)"
+	} else {
+		inputTitle += " (active)"
+	}
+	drawBox(screen, 0, 0, leftWidth, height-2, toolsTitle, boxStyle)
 	drawBox(screen, rightX, 0, rightWidth, height-2, tuiTools[state.selected].command, boxStyle)
 
-	drawTools(screen, state, 1, 1, leftWidth-2, height-4)
+	drawTools(screen, *state, 1, 1, leftWidth-2, height-4)
 	drawText(screen, rightX+2, 2, rightWidth-4, tuiTools[state.selected].description, mutedStyle)
-	drawText(screen, rightX+2, 4, rightWidth-4, "Input", titleStyle)
-	drawLines(screen, rightX+2, 5, rightWidth-4, max(3, height/3), string(state.input), tcell.StyleDefault)
+	drawText(screen, rightX+2, 4, rightWidth-4, inputTitle, titleStyle)
+	drawInput(screen, *state, rightX+2, 5, rightWidth-4, max(3, height/3))
 	drawText(screen, rightX+2, 6+max(3, height/3), rightWidth-4, "Output", titleStyle)
 	output := state.result
 	if output == "" {
 		output = "Output appears here after you press Enter."
 	}
 	drawLines(screen, rightX+2, 7+max(3, height/3), rightWidth-4, height-(9+max(3, height/3)), output, tcell.StyleDefault)
-	drawText(screen, 0, height-1, width, "Type in the editor · ↑/↓ choose a tool · Enter runs · Ctrl+J adds a line · Esc exits", mutedStyle)
+	drawText(screen, 0, height-1, width, "Tab switches panes · arrows move the active pane · Enter runs · Ctrl+J adds a line · Esc exits", mutedStyle)
 	screen.Show()
 }
 
@@ -172,6 +217,74 @@ func drawTools(screen tcell.Screen, state tuiState, x, y, width, height int) {
 		}
 		drawText(screen, x, y+row, width, prefix+tuiTools[index].command, style)
 	}
+}
+
+func drawInput(screen tcell.Screen, state tuiState, x, y, width, height int) {
+	lines := wrapTUI(string(state.input), width)
+	cursorLine, cursorColumn := inputCursorPosition(state.input, state.cursor, width)
+	if cursorLine >= len(lines) {
+		lines = append(lines, "")
+	}
+	firstLine := max(0, cursorLine-height+1)
+	if len(state.input) == 0 {
+		drawText(screen, x, y, width, "Type input here", tcell.StyleDefault.Foreground(tcell.ColorGray))
+	}
+	for row := 0; row < height; row++ {
+		lineIndex := firstLine + row
+		if lineIndex >= len(lines) {
+			break
+		}
+		drawText(screen, x, y+row, width, lines[lineIndex], tcell.StyleDefault)
+	}
+	if state.focus != focusEditor || cursorLine < firstLine || cursorLine >= firstLine+height {
+		return
+	}
+	line := []rune(lines[cursorLine])
+	cursorChar := ' '
+	if cursorColumn < len(line) {
+		cursorChar = line[cursorColumn]
+	}
+	screen.SetContent(x+cursorColumn, y+cursorLine-firstLine, cursorChar, nil, tcell.StyleDefault.Reverse(true))
+}
+
+func inputCursorPosition(input []rune, cursor, width int) (int, int) {
+	if width < 1 {
+		width = 1
+	}
+	cursor = min(max(cursor, 0), len(input))
+	line, column := 0, 0
+	for _, char := range input[:cursor] {
+		if char == '\n' {
+			line, column = line+1, 0
+			continue
+		}
+		column++
+		if column == width {
+			line, column = line+1, 0
+		}
+	}
+	return line, column
+}
+
+func moveCursorVertical(input []rune, cursor, direction, width int) int {
+	currentLine, currentColumn := inputCursorPosition(input, cursor, width)
+	lastLine, _ := inputCursorPosition(input, len(input), width)
+	targetLine := min(max(currentLine+direction, 0), lastLine)
+	bestPosition, bestDistance := cursor, int(^uint(0)>>1)
+	for position := 0; position <= len(input); position++ {
+		line, column := inputCursorPosition(input, position, width)
+		if line != targetLine {
+			continue
+		}
+		distance := column - currentColumn
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			bestPosition, bestDistance = position, distance
+		}
+	}
+	return bestPosition
 }
 
 func drawBox(screen tcell.Screen, x, y, width, height int, title string, style tcell.Style) {

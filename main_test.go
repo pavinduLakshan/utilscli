@@ -59,10 +59,22 @@ func TestInteractiveMenu(t *testing.T) {
 	}
 	defer screen.Fini()
 	screen.SetSize(100, 30)
-	drawTUI(screen, tuiState{})
+	drawTUI(screen, &tuiState{})
 	r, _, _, _ := screen.GetContent(3, 0)
 	if r != 'T' {
 		t.Fatalf("tools panel was not rendered, got %q", r)
+	}
+}
+
+func TestEditorCursorNavigation(t *testing.T) {
+	state := tuiState{input: []rune("one\ntwo"), cursor: 1, inputWidth: 20}
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone))
+	if state.cursor != 2 {
+		t.Fatalf("right arrow moved cursor to %d, want 2", state.cursor)
+	}
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	if state.cursor != 6 {
+		t.Fatalf("down arrow moved cursor to %d, want 6", state.cursor)
 	}
 }
 
