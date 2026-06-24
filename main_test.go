@@ -78,6 +78,28 @@ func TestEditorCursorNavigation(t *testing.T) {
 	}
 }
 
+func TestEditorEnterAddsNewline(t *testing.T) {
+	state := tuiState{input: []rune("first"), cursor: 5}
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if got, want := string(state.input), "first\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRegexUsesSeparatePatternAndTextFields(t *testing.T) {
+	state := tuiState{regexPattern: []rune("foo"), regexText: []rune("foo bar foo")}
+	for index, tool := range tuiTools {
+		if tool.command == "regex" {
+			state.selected = index
+			break
+		}
+	}
+	runSelectedTool(&state)
+	if !strings.Contains(state.result, "2 match(es)") {
+		t.Fatalf("unexpected regex result: %q", state.result)
+	}
+}
+
 func TestTUIToolsAreCommands(t *testing.T) {
 	for _, tool := range tuiTools {
 		if canonicalCommand(tool.command) == "" {

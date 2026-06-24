@@ -40,20 +40,45 @@ var tuiTools = []toolDefinition{
 }
 
 type tuiState struct {
-	selected   int
-	input      []rune
-	cursor     int
-	inputWidth int
-	focus      tuiFocus
-	result     string
+	selected           int
+	input              []rune
+	cursor             int
+	regexPattern       []rune
+	regexPatternCursor int
+	regexText          []rune
+	regexTextCursor    int
+	inputWidth         int
+	focus              tuiFocus
+	result             string
 }
 
 type tuiFocus int
 
 const (
-	focusEditor tuiFocus = iota
+	focusInput tuiFocus = iota
 	focusTools
+	focusRegexPattern
+	focusRegexText
 )
+
+type toolInputMode int
+
+const (
+	inputText toolInputMode = iota
+	inputRegex
+	inputNone
+)
+
+func selectedInputMode(state *tuiState) toolInputMode {
+	switch tuiTools[state.selected].command {
+	case "regex":
+		return inputRegex
+	case "uuid", "password":
+		return inputNone
+	default:
+		return inputText
+	}
+}
 
 // runInteractive opens a full-screen terminal UI for a bare uc invocation.
 func runInteractive(in io.Reader, out io.Writer) error {
@@ -97,57 +122,113 @@ func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
 	case tcell.KeyCtrlC, tcell.KeyEscape:
 		return true
 	case tcell.KeyTAB:
-		if state.focus == focusEditor {
-			state.focus = focusTools
-		} else {
-			state.focus = focusEditor
-		}
+		advanceFocus(state)
 	case tcell.KeyUp:
 		if state.focus == focusTools && state.selected > 0 {
 			state.selected--
-		} else if state.focus == focusEditor {
-			state.cursor = moveCursorVertical(state.input, state.cursor, -1, state.inputWidth)
+		} else if input, cursor := activeInput(state); input != nil {
+			*cursor = moveCursorVertical(*input, *cursor, -1, state.inputWidth)
 		}
 	case tcell.KeyDown:
 		if state.focus == focusTools && state.selected < len(tuiTools)-1 {
 			state.selected++
-		} else if state.focus == focusEditor {
-			state.cursor = moveCursorVertical(state.input, state.cursor, 1, state.inputWidth)
+		} else if input, cursor := activeInput(state); input != nil {
+			*cursor = moveCursorVertical(*input, *cursor, 1, state.inputWidth)
 		}
 	case tcell.KeyLeft:
-		if state.focus == focusEditor && state.cursor > 0 {
-			state.cursor--
+		if _, cursor := activeInput(state); cursor != nil && *cursor > 0 {
+			*cursor--
 		}
 	case tcell.KeyRight:
-		if state.focus == focusEditor && state.cursor < len(state.input) {
-			state.cursor++
+		if input, cursor := activeInput(state); input != nil && *cursor < len(*input) {
+			*cursor++
 		}
 	case tcell.KeyEnter:
+		if input, cursor := activeInput(state); input != nil {
+			insertInputRune(input, cursor, '\n')
+		} else if selectedInputMode(state) == inputNone {
+			runSelectedTool(state)
+		} else {
+			state.focus = firstInputFocus(selectedInputMode(state))
+		}
+	case tcell.KeyCtrlR:
 		runSelectedTool(state)
 	case tcell.KeyCtrlJ:
-		insertInputRune(state, '\n')
+		if input, cursor := activeInput(state); input != nil {
+			insertInputRune(input, cursor, '\n')
+		}
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if state.focus == focusEditor && state.cursor > 0 {
-			state.input = append(state.input[:state.cursor-1], state.input[state.cursor:]...)
-			state.cursor--
+		if input, cursor := activeInput(state); input != nil && *cursor > 0 {
+			*input = append((*input)[:*cursor-1], (*input)[*cursor:]...)
+			*cursor--
 		}
 	case tcell.KeyRune:
-		state.focus = focusEditor
-		insertInputRune(state, event.Rune())
+		if state.focus == focusTools && selectedInputMode(state) != inputNone {
+			state.focus = firstInputFocus(selectedInputMode(state))
+		}
+		if input, cursor := activeInput(state); input != nil {
+			insertInputRune(input, cursor, event.Rune())
+		}
 	}
 	return false
 }
 
-func insertInputRune(state *tuiState, char rune) {
-	state.input = append(state.input, 0)
-	copy(state.input[state.cursor+1:], state.input[state.cursor:])
-	state.input[state.cursor] = char
-	state.cursor++
+func advanceFocus(state *tuiState) {
+	switch selectedInputMode(state) {
+	case inputNone:
+		state.focus = focusTools
+	case inputRegex:
+		switch state.focus {
+		case focusTools:
+			state.focus = focusRegexPattern
+		case focusRegexPattern:
+			state.focus = focusRegexText
+		default:
+			state.focus = focusTools
+		}
+	default:
+		if state.focus == focusTools {
+			state.focus = focusInput
+		} else {
+			state.focus = focusTools
+		}
+	}
+}
+
+func firstInputFocus(mode toolInputMode) tuiFocus {
+	if mode == inputRegex {
+		return focusRegexPattern
+	}
+	return focusInput
+}
+
+func activeInput(state *tuiState) (*[]rune, *int) {
+	switch state.focus {
+	case focusInput:
+		return &state.input, &state.cursor
+	case focusRegexPattern:
+		return &state.regexPattern, &state.regexPatternCursor
+	case focusRegexText:
+		return &state.regexText, &state.regexTextCursor
+	default:
+		return nil, nil
+	}
+}
+
+func insertInputRune(input *[]rune, cursor *int, char rune) {
+	*input = append(*input, 0)
+	copy((*input)[*cursor+1:], (*input)[*cursor:])
+	(*input)[*cursor] = char
+	*cursor++
 }
 
 func runSelectedTool(state *tuiState) {
 	tool := tuiTools[state.selected]
-	result, err := execute(tool.command, string(state.input))
+	input := string(state.input)
+	if selectedInputMode(state) == inputRegex {
+		input = string(state.regexPattern) + "\n" + string(state.regexText)
+	}
+	result, err := execute(tool.command, input)
 	if err != nil {
 		state.result = "Error: " + err.Error()
 		return
@@ -176,26 +257,23 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 	titleStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorAqua)
 	mutedStyle := tcell.StyleDefault.Foreground(tcell.ColorGray)
 	toolsTitle := "Tools"
-	inputTitle := "Input"
 	if state.focus == focusTools {
 		toolsTitle += " (active)"
-	} else {
-		inputTitle += " (active)"
 	}
 	drawBox(screen, 0, 0, leftWidth, height-2, toolsTitle, boxStyle)
 	drawBox(screen, rightX, 0, rightWidth, height-2, tuiTools[state.selected].command, boxStyle)
 
 	drawTools(screen, *state, 1, 1, leftWidth-2, height-4)
 	drawText(screen, rightX+2, 2, rightWidth-4, tuiTools[state.selected].description, mutedStyle)
-	drawText(screen, rightX+2, 4, rightWidth-4, inputTitle, titleStyle)
-	drawInput(screen, *state, rightX+2, 5, rightWidth-4, max(3, height/3))
-	drawText(screen, rightX+2, 6+max(3, height/3), rightWidth-4, "Output", titleStyle)
-	output := state.result
-	if output == "" {
-		output = "Output appears here after you press Enter."
+	switch selectedInputMode(state) {
+	case inputRegex:
+		drawRegexView(screen, *state, rightX+2, rightWidth-4, height, titleStyle)
+	case inputNone:
+		drawNoInputView(screen, state.result, rightX+2, rightWidth-4, height, titleStyle, mutedStyle)
+	default:
+		drawTextInputView(screen, *state, rightX+2, rightWidth-4, height, titleStyle)
 	}
-	drawLines(screen, rightX+2, 7+max(3, height/3), rightWidth-4, height-(9+max(3, height/3)), output, tcell.StyleDefault)
-	drawText(screen, 0, height-1, width, "Tab switches panes · arrows move the active pane · Enter runs · Ctrl+J adds a line · Esc exits", mutedStyle)
+	drawText(screen, 0, height-1, width, "Tab switches panes · arrows move the active pane · Enter adds a line · Ctrl+R runs · Esc exits", mutedStyle)
 	screen.Show()
 }
 
@@ -219,15 +297,58 @@ func drawTools(screen tcell.Screen, state tuiState, x, y, width, height int) {
 	}
 }
 
-func drawInput(screen tcell.Screen, state tuiState, x, y, width, height int) {
-	lines := wrapTUI(string(state.input), width)
-	cursorLine, cursorColumn := inputCursorPosition(state.input, state.cursor, width)
+func drawTextInputView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle tcell.Style) {
+	inputHeight := max(3, screenHeight/3)
+	title := "Input"
+	if state.focus == focusInput {
+		title += " (active)"
+	}
+	drawText(screen, x, 4, width, title, titleStyle)
+	drawInput(screen, state.input, state.cursor, state.focus == focusInput, x, 5, width, inputHeight, "Type input here")
+	drawOutput(screen, state.result, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle)
+}
+
+func drawRegexView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle tcell.Style) {
+	fieldHeight := max(2, (screenHeight-12)/3)
+	patternTitle := "Pattern"
+	if state.focus == focusRegexPattern {
+		patternTitle += " (active)"
+	}
+	textTitle := "Text to test"
+	if state.focus == focusRegexText {
+		textTitle += " (active)"
+	}
+	drawText(screen, x, 4, width, patternTitle, titleStyle)
+	drawInput(screen, state.regexPattern, state.regexPatternCursor, state.focus == focusRegexPattern, x, 5, width, fieldHeight, "Regular expression")
+	textY := 6 + fieldHeight
+	drawText(screen, x, textY, width, textTitle, titleStyle)
+	drawInput(screen, state.regexText, state.regexTextCursor, state.focus == focusRegexText, x, textY+1, width, fieldHeight, "Text to test")
+	drawOutput(screen, state.result, x, textY+fieldHeight+2, width, screenHeight-(textY+fieldHeight+5), titleStyle)
+}
+
+func drawNoInputView(screen tcell.Screen, result string, x, width, screenHeight int, titleStyle, mutedStyle tcell.Style) {
+	drawText(screen, x, 4, width, "No input required", titleStyle)
+	drawText(screen, x, 5, width, "Press Enter or Ctrl+R to generate a result.", mutedStyle)
+	drawOutput(screen, result, x, 7, width, screenHeight-10, titleStyle)
+}
+
+func drawOutput(screen tcell.Screen, result string, x, y, width, height int, titleStyle tcell.Style) {
+	drawText(screen, x, y, width, "Output", titleStyle)
+	if result == "" {
+		result = "Output appears here after you run the tool."
+	}
+	drawLines(screen, x, y+1, width, height, result, tcell.StyleDefault)
+}
+
+func drawInput(screen tcell.Screen, input []rune, cursor int, active bool, x, y, width, height int, placeholder string) {
+	lines := wrapTUI(string(input), width)
+	cursorLine, cursorColumn := inputCursorPosition(input, cursor, width)
 	if cursorLine >= len(lines) {
 		lines = append(lines, "")
 	}
 	firstLine := max(0, cursorLine-height+1)
-	if len(state.input) == 0 {
-		drawText(screen, x, y, width, "Type input here", tcell.StyleDefault.Foreground(tcell.ColorGray))
+	if len(input) == 0 {
+		drawText(screen, x, y, width, placeholder, tcell.StyleDefault.Foreground(tcell.ColorGray))
 	}
 	for row := 0; row < height; row++ {
 		lineIndex := firstLine + row
@@ -236,7 +357,7 @@ func drawInput(screen tcell.Screen, state tuiState, x, y, width, height int) {
 		}
 		drawText(screen, x, y+row, width, lines[lineIndex], tcell.StyleDefault)
 	}
-	if state.focus != focusEditor || cursorLine < firstLine || cursorLine >= firstLine+height {
+	if !active || cursorLine < firstLine || cursorLine >= firstLine+height {
 		return
 	}
 	line := []rune(lines[cursorLine])
