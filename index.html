@@ -33,7 +33,7 @@
   <header>
     <h1>Utils CLI</h1>
     <p class="tagline">The terminal-native day-today utility toolbox for developers.</p>
-    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Run <code>uc</code> for a natural-language prompt, or <code>uc --help</code> to list the available tools.</p>
+    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Run <code>uc</code> to open the interactive terminal UI, or <code>uc --help</code> to list the available tools.</p>
   </header>
 
   <section>
@@ -43,9 +43,8 @@
       <button class="copy-command" type="button" data-copy-target="install-script" aria-label="Copy install command" title="Copy install command">⧉</button>
     </div>
     <p>The installer downloads the correct binary from the latest GitHub release, installs it to <code>~/.local/bin</code>, and adds that location to your shell startup file when needed. Open a new terminal afterwards.</p>
-    <pre><code>uc 'base64 osidosodi'
+      <pre><code>uc b64-encode osidosodi
 # b3NpZG9zb2Rp</code></pre>
-    <p class="note">For AI-assisted routing, install and log in to <a href="https://docs.anthropic.com/en/docs/claude-code/getting-started">Claude Code</a>. <code>uc</code> does not require an API key or model setting.</p>
   </section>
 
   <section>

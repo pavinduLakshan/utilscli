@@ -4,18 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-)
 
-// TestNaturalLanguageBase64 verifies deterministic natural-language routing.
-func TestNaturalLanguageBase64(t *testing.T) {
-	var out bytes.Buffer
-	if err := run([]string{"base64 osidosodi"}, strings.NewReader(""), &out); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := out.String(), "b3NpZG9zb2Rp\n"; got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-}
+	"github.com/gdamore/tcell/v2"
+)
 
 // TestPipedInput verifies a utility accepts text from standard input.
 func TestPipedInput(t *testing.T) {
@@ -60,26 +51,32 @@ func TestPasswordAndUUIDDefaults(t *testing.T) {
 	}
 }
 
-// TestParseClaudeResponse ensures an allow-listed Claude result is decoded safely.
-func TestParseClaudeResponse(t *testing.T) {
-	output := []byte(`{"result":"{\"command\":\"b64-encode\",\"input\":\"osidosodi\"}"}`)
-	command, args, err := parseClaudeResponse(output)
-	if err != nil {
+// TestInteractiveMenu verifies the terminal UI includes its main panels.
+func TestInteractiveMenu(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if command != "b64-encode" || len(args) != 1 || args[0] != "osidosodi" {
-		t.Fatalf("unexpected routing result: %q %#v", command, args)
+	defer screen.Fini()
+	screen.SetSize(100, 30)
+	drawTUI(screen, tuiState{})
+	r, _, _, _ := screen.GetContent(3, 0)
+	if r != 'T' {
+		t.Fatalf("tools panel was not rendered, got %q", r)
 	}
 }
 
-// TestInteractiveMenu verifies natural-language execution from a bare uc invocation.
-func TestInteractiveMenu(t *testing.T) {
-	var out bytes.Buffer
-	input := strings.NewReader("base64 osidosodi\n")
-	if err := run(nil, input, &out); err != nil {
-		t.Fatal(err)
+func TestTUIToolsAreCommands(t *testing.T) {
+	for _, tool := range tuiTools {
+		if canonicalCommand(tool.command) == "" {
+			t.Errorf("%q is not a supported command", tool.command)
+		}
 	}
-	if !strings.Contains(out.String(), "What would you like to do?") || !strings.Contains(out.String(), "b3NpZG9zb2Rp") {
-		t.Fatalf("interactive output did not include the prompt and encoded result: %q", out.String())
+}
+
+func TestUnknownCommandDoesNotUsePromptRouting(t *testing.T) {
+	var out bytes.Buffer
+	if err := run([]string{"base64 hello"}, strings.NewReader(""), &out); err == nil {
+		t.Fatal("expected an unknown command error")
 	}
 }

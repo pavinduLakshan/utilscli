@@ -53,12 +53,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	command := canonicalCommand(args[0])
 	commandArgs := args[1:]
 	if command == "" {
-		prompt := strings.TrimSpace(strings.Join(args, " "))
-		var err error
-		command, commandArgs, err = resolvePrompt(prompt)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("unknown command %q; run 'uc --help' for commands", args[0])
 	}
 
 	input, err := readInput(command, commandArgs, in)
@@ -76,8 +71,8 @@ func run(args []string, in io.Reader, out io.Writer) error {
 const usage = `uc — command-line CS utilities
 
 Usage:
+  uc                        Open the interactive terminal UI
   uc <command> [input]       Run an explicit utility (or pipe input through stdin)
-  uc "<request>"             Ask naturally: uc "base64 hello" or uc "pretty JSON {\"a\":1}"
 
 Tools:
   b64-encode      Encode text as Unicode-safe Base64.
