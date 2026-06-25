@@ -17,10 +17,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -111,14 +109,6 @@ Tools:
                   uc password --length 24 --symbols
   timestamp       Convert a Unix timestamp or an RFC 3339 date.
                   uc timestamp 1710000000
-  regex           Find matches; pipe PATTERN and TEXT separated by a newline.
-                  printf 'foo\nfoo bar' | uc regex
-  diff            Compare left and right text separated by a line containing ---.
-                  printf 'before\n---\nafter' | uc diff
-  http            Look up an HTTP status code and reason phrase.
-                  uc http 404
-  cors            Generate Access-Control response headers from flags.
-                  uc cors --origin https://app.example.com --credentials
 `
 
 // isHelp reports whether an argument requests the built-in help text.
@@ -174,7 +164,7 @@ func canonicalCommand(s string) string {
 		return "jwt"
 	case "saml", "saml-decode":
 		return "saml"
-	case "hash", "uuid", "password", "timestamp", "regex", "diff", "http", "cors":
+	case "hash", "uuid", "password", "timestamp":
 		return strings.ToLower(s)
 	default:
 		return ""
@@ -220,14 +210,6 @@ func execute(command, input string) (string, error) {
 		return password(input)
 	case "timestamp":
 		return convertTimestamp(input)
-	case "regex":
-		return testRegex(input)
-	case "diff":
-		return textDiff(input)
-	case "http":
-		return httpStatus(input)
-	case "cors":
-		return corsHeaders(input), nil
 	}
 	return "", fmt.Errorf("unknown command %q", command)
 }
@@ -493,81 +475,6 @@ func convertTimestamp(s string) (string, error) {
 		}
 	}
 	return fmt.Sprintf("UTC: %s\nLocal: %s\nISO 8601: %s\nUnix (seconds): %d\nUnix (ms): %d", t.UTC().Format(time.RFC1123), t.Local().Format(time.RFC1123), t.UTC().Format(time.RFC3339Nano), t.Unix(), t.UnixMilli()), nil
-}
-
-// testRegex finds all matches for a pattern and text separated by a newline.
-func testRegex(input string) (string, error) {
-	parts := strings.SplitN(input, "\n", 2)
-	if len(parts) != 2 {
-		return "", errors.New("regex expects PATTERN and TEXT separated by a newline")
-	}
-	re, err := regexp.Compile(parts[0])
-	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
-	}
-	matches := re.FindAllStringIndex(parts[1], -1)
-	var out strings.Builder
-	fmt.Fprintf(&out, "%d match(es)", len(matches))
-	for _, m := range matches {
-		fmt.Fprintf(&out, "\n[%d:%d] %s", m[0], m[1], parts[1][m[0]:m[1]])
-	}
-	return out.String(), nil
-}
-
-// textDiff compares left and right text sections separated by a line containing three dashes.
-func textDiff(input string) (string, error) {
-	parts := strings.SplitN(input, "\n---\n", 2)
-	if len(parts) != 2 {
-		return "", errors.New("diff expects LEFT and RIGHT separated by a line containing ---")
-	}
-	if parts[0] == parts[1] {
-		return "No differences", nil
-	}
-	return "--- left\n+++ right\n-" + strings.ReplaceAll(parts[0], "\n", "\n-") + "\n+" + strings.ReplaceAll(parts[1], "\n", "\n+"), nil
-}
-
-// httpStatus returns the standard reason phrase for an HTTP status code.
-func httpStatus(s string) (string, error) {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return "", errors.New("HTTP status must be a number")
-	}
-	text := http.StatusText(n)
-	if text == "" {
-		return "", fmt.Errorf("unknown HTTP status %d", n)
-	}
-	return fmt.Sprintf("%d %s", n, text), nil
-}
-
-// corsHeaders builds Access-Control response headers from command-line style flags.
-func corsHeaders(input string) string {
-	fs := flag.NewFlagSet("cors", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	origin := fs.String("origin", "*", "")
-	methods := fs.String("methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS", "")
-	headers := fs.String("headers", "", "")
-	expose := fs.String("expose", "", "")
-	maxAge := fs.String("max-age", "", "")
-	credentials := fs.Bool("credentials", false, "")
-	_ = fs.Parse(strings.Fields(input))
-	var lines []string
-	lines = append(lines, "Access-Control-Allow-Origin: "+*origin)
-	if *methods != "" {
-		lines = append(lines, "Access-Control-Allow-Methods: "+*methods)
-	}
-	if *headers != "" {
-		lines = append(lines, "Access-Control-Allow-Headers: "+*headers)
-	}
-	if *expose != "" {
-		lines = append(lines, "Access-Control-Expose-Headers: "+*expose)
-	}
-	if *maxAge != "" {
-		lines = append(lines, "Access-Control-Max-Age: "+*maxAge)
-	}
-	if *credentials {
-		lines = append(lines, "Access-Control-Allow-Credentials: true")
-	}
-	return strings.Join(lines, "\n")
 }
 
 // Kept referenced so go vet recognizes the import as intentional in older toolchains.

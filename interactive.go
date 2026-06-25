@@ -33,23 +33,15 @@ var tuiTools = []toolDefinition{
 	{"uuid", "Generate a UUID"},
 	{"password", "Generate a password"},
 	{"timestamp", "Convert a timestamp or date"},
-	{"regex", "Find regular-expression matches"},
-	{"diff", "Compare text separated by ---"},
-	{"http", "Look up an HTTP status"},
-	{"cors", "Generate CORS headers from flags"},
 }
 
 type tuiState struct {
-	selected           int
-	input              []rune
-	cursor             int
-	regexPattern       []rune
-	regexPatternCursor int
-	regexText          []rune
-	regexTextCursor    int
-	inputWidth         int
-	focus              tuiFocus
-	result             string
+	selected   int
+	input      []rune
+	cursor     int
+	inputWidth int
+	focus      tuiFocus
+	result     string
 }
 
 type tuiFocus int
@@ -57,27 +49,26 @@ type tuiFocus int
 const (
 	focusInput tuiFocus = iota
 	focusTools
-	focusRegexPattern
-	focusRegexText
 )
 
 type toolInputMode int
 
 const (
 	inputText toolInputMode = iota
-	inputRegex
 	inputNone
 )
 
 func selectedInputMode(state *tuiState) toolInputMode {
 	switch tuiTools[state.selected].command {
-	case "regex":
-		return inputRegex
 	case "uuid", "password":
 		return inputNone
 	default:
 		return inputText
 	}
+}
+
+func initialTUIState() tuiState {
+	return tuiState{focus: focusTools}
 }
 
 // runInteractive opens a full-screen terminal UI for a bare uc invocation.
@@ -97,18 +88,30 @@ func runInteractive(in io.Reader, out io.Writer) error {
 	}
 	defer screen.Fini()
 
-	state := tuiState{}
+	state := initialTUIState()
 	for {
 		drawTUI(screen, &state)
-		switch event := screen.PollEvent().(type) {
-		case *tcell.EventResize:
-			screen.Sync()
-		case *tcell.EventKey:
-			if handleTUIKey(&state, event) {
+		if handleTUIEvent(screen, &state, screen.PollEvent()) {
+			return nil
+		}
+		for screen.HasPendingEvent() {
+			if handleTUIEvent(screen, &state, screen.PollEvent()) {
 				return nil
 			}
 		}
 	}
+}
+
+// handleTUIEvent applies queued input before the next render, which keeps long
+// pastes responsive without relying on terminal-specific bracketed-paste events.
+func handleTUIEvent(screen tcell.Screen, state *tuiState, event tcell.Event) bool {
+	switch event := event.(type) {
+	case *tcell.EventResize:
+		screen.Sync()
+	case *tcell.EventKey:
+		return handleTUIKey(state, event)
+	}
+	return false
 }
 
 func isTerminal(file *os.File) bool {
@@ -125,13 +128,13 @@ func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
 		advanceFocus(state)
 	case tcell.KeyUp:
 		if state.focus == focusTools && state.selected > 0 {
-			state.selected--
+			selectTool(state, state.selected-1)
 		} else if input, cursor := activeInput(state); input != nil {
 			*cursor = moveCursorVertical(*input, *cursor, -1, state.inputWidth)
 		}
 	case tcell.KeyDown:
 		if state.focus == focusTools && state.selected < len(tuiTools)-1 {
-			state.selected++
+			selectTool(state, state.selected+1)
 		} else if input, cursor := activeInput(state); input != nil {
 			*cursor = moveCursorVertical(*input, *cursor, 1, state.inputWidth)
 		}
@@ -173,19 +176,24 @@ func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
 	return false
 }
 
+func selectTool(state *tuiState, selected int) {
+	if selected == state.selected {
+		return
+	}
+	state.selected = selected
+	clearToolState(state)
+}
+
+func clearToolState(state *tuiState) {
+	state.input = nil
+	state.cursor = 0
+	state.result = ""
+}
+
 func advanceFocus(state *tuiState) {
 	switch selectedInputMode(state) {
 	case inputNone:
 		state.focus = focusTools
-	case inputRegex:
-		switch state.focus {
-		case focusTools:
-			state.focus = focusRegexPattern
-		case focusRegexPattern:
-			state.focus = focusRegexText
-		default:
-			state.focus = focusTools
-		}
 	default:
 		if state.focus == focusTools {
 			state.focus = focusInput
@@ -196,9 +204,6 @@ func advanceFocus(state *tuiState) {
 }
 
 func firstInputFocus(mode toolInputMode) tuiFocus {
-	if mode == inputRegex {
-		return focusRegexPattern
-	}
 	return focusInput
 }
 
@@ -206,10 +211,6 @@ func activeInput(state *tuiState) (*[]rune, *int) {
 	switch state.focus {
 	case focusInput:
 		return &state.input, &state.cursor
-	case focusRegexPattern:
-		return &state.regexPattern, &state.regexPatternCursor
-	case focusRegexText:
-		return &state.regexText, &state.regexTextCursor
 	default:
 		return nil, nil
 	}
@@ -225,9 +226,6 @@ func insertInputRune(input *[]rune, cursor *int, char rune) {
 func runSelectedTool(state *tuiState) {
 	tool := tuiTools[state.selected]
 	input := string(state.input)
-	if selectedInputMode(state) == inputRegex {
-		input = string(state.regexPattern) + "\n" + string(state.regexText)
-	}
 	result, err := execute(tool.command, input)
 	if err != nil {
 		state.result = "Error: " + err.Error()
@@ -255,23 +253,18 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 
 	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorMediumPurple)
 	titleStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorAqua)
+	activeStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorWhite).Background(tcell.ColorDarkCyan)
 	mutedStyle := tcell.StyleDefault.Foreground(tcell.ColorGray)
-	toolsTitle := "Tools"
-	if state.focus == focusTools {
-		toolsTitle += " (active)"
-	}
-	drawBox(screen, 0, 0, leftWidth, height-2, toolsTitle, boxStyle)
-	drawBox(screen, rightX, 0, rightWidth, height-2, tuiTools[state.selected].command, boxStyle)
+	drawBox(screen, 0, 0, leftWidth, height-2, "Tools", state.focus == focusTools, boxStyle, activeStyle)
+	drawBox(screen, rightX, 0, rightWidth, height-2, tuiTools[state.selected].command, false, boxStyle, activeStyle)
 
 	drawTools(screen, *state, 1, 1, leftWidth-2, height-4)
 	drawText(screen, rightX+2, 2, rightWidth-4, tuiTools[state.selected].description, mutedStyle)
 	switch selectedInputMode(state) {
-	case inputRegex:
-		drawRegexView(screen, *state, rightX+2, rightWidth-4, height, titleStyle)
 	case inputNone:
 		drawNoInputView(screen, state.result, rightX+2, rightWidth-4, height, titleStyle, mutedStyle)
 	default:
-		drawTextInputView(screen, *state, rightX+2, rightWidth-4, height, titleStyle)
+		drawTextInputView(screen, *state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	}
 	drawText(screen, 0, height-1, width, "Tab switches panes · arrows move the active pane · Enter adds a line · Ctrl+R runs · Esc exits", mutedStyle)
 	screen.Show()
@@ -297,33 +290,11 @@ func drawTools(screen tcell.Screen, state tuiState, x, y, width, height int) {
 	}
 }
 
-func drawTextInputView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle tcell.Style) {
+func drawTextInputView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle, activeStyle tcell.Style) {
 	inputHeight := max(3, screenHeight/3)
-	title := "Input"
-	if state.focus == focusInput {
-		title += " (active)"
-	}
-	drawText(screen, x, 4, width, title, titleStyle)
+	drawTitle(screen, x, 4, width, "Input", state.focus == focusInput, titleStyle, activeStyle)
 	drawInput(screen, state.input, state.cursor, state.focus == focusInput, x, 5, width, inputHeight, "Type input here")
 	drawOutput(screen, state.result, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle)
-}
-
-func drawRegexView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle tcell.Style) {
-	fieldHeight := max(2, (screenHeight-12)/3)
-	patternTitle := "Pattern"
-	if state.focus == focusRegexPattern {
-		patternTitle += " (active)"
-	}
-	textTitle := "Text to test"
-	if state.focus == focusRegexText {
-		textTitle += " (active)"
-	}
-	drawText(screen, x, 4, width, patternTitle, titleStyle)
-	drawInput(screen, state.regexPattern, state.regexPatternCursor, state.focus == focusRegexPattern, x, 5, width, fieldHeight, "Regular expression")
-	textY := 6 + fieldHeight
-	drawText(screen, x, textY, width, textTitle, titleStyle)
-	drawInput(screen, state.regexText, state.regexTextCursor, state.focus == focusRegexText, x, textY+1, width, fieldHeight, "Text to test")
-	drawOutput(screen, state.result, x, textY+fieldHeight+2, width, screenHeight-(textY+fieldHeight+5), titleStyle)
 }
 
 func drawNoInputView(screen tcell.Screen, result string, x, width, screenHeight int, titleStyle, mutedStyle tcell.Style) {
@@ -408,7 +379,7 @@ func moveCursorVertical(input []rune, cursor, direction, width int) int {
 	return bestPosition
 }
 
-func drawBox(screen tcell.Screen, x, y, width, height int, title string, style tcell.Style) {
+func drawBox(screen tcell.Screen, x, y, width, height int, title string, active bool, style, activeStyle tcell.Style) {
 	if width < 2 || height < 2 {
 		return
 	}
@@ -424,7 +395,16 @@ func drawBox(screen tcell.Screen, x, y, width, height int, title string, style t
 	screen.SetContent(x+width-1, y, '┐', nil, style)
 	screen.SetContent(x, y+height-1, '└', nil, style)
 	screen.SetContent(x+width-1, y+height-1, '┘', nil, style)
-	drawText(screen, x+2, y, width-4, " "+title+" ", style.Bold(true))
+	drawTitle(screen, x+2, y, width-4, " "+title, active, style.Bold(true), activeStyle)
+}
+
+func drawTitle(screen tcell.Screen, x, y, width int, title string, active bool, titleStyle, activeStyle tcell.Style) {
+	drawText(screen, x, y, width, title, titleStyle)
+	if !active {
+		return
+	}
+	offset := len([]rune(title))
+	drawText(screen, x+offset, y, width-offset, " (active · Tab switches focus)", activeStyle)
 }
 
 func drawLines(screen tcell.Screen, x, y, width, height int, value string, style tcell.Style) {

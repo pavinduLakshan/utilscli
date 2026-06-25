@@ -20,6 +20,6 @@ uc b64-encode osidosodi
 Set `UC_BIN_DIR` to install somewhere else, e.g. `UC_BIN_DIR=$HOME/bin sh install.sh`.
 Set `UC_REPO` if you publish the project under a different GitHub repository.
 
-It supports the documented encoders, JSON/XML formatters, JWT and SAML decoding, hashes, UUIDs, passwords, timestamps, regex matching, diff, HTTP status lookup, and CORS headers. Run `uc --help` for the full command list.
+It supports the documented encoders, JSON/XML formatters, JWT and SAML decoding, hashes, UUIDs, passwords, and timestamps. Run `uc --help` for the full command list.
 
-Run `uc` with no arguments to open the interactive terminal UI. The editor is active first: use the arrow keys to move its visible cursor, press Tab to focus the tool list, and use the arrow keys to choose a tool. Enter adds a line to an active editor; Ctrl+R runs the selected tool. UUID and password generation do not require input, and Regex provides dedicated pattern and text editors. Use `uc --help` for the complete command list.
+Run `uc` with no arguments to open the interactive terminal UI. The tools panel is active first: use the arrow keys to choose a tool, then press Tab to focus that tool's editor. Enter adds a line to an active editor; Ctrl+R runs the selected tool. UUID and password generation do not require input. Use `uc --help` for the complete command list.

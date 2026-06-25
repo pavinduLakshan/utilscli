@@ -25,7 +25,7 @@ func TestUtilityTransforms(t *testing.T) {
 		{"url-encode", "a!b*c()'", "a%21b%2Ac%28%29%27"},
 		{"html-encode", `<a&'">`, "&lt;a&amp;&#39;&quot;&gt;"},
 		{"json-minify", "{ \"a\": 1 }", "{\"a\":1}"},
-		{"http", "404", "404 Not Found"},
+		{"xml-minify", "<root>  <item>one</item> </root>", "<root><item>one</item></root>"},
 	}
 	for _, tt := range tests {
 		got, err := execute(tt.command, tt.input)
@@ -66,8 +66,31 @@ func TestInteractiveMenu(t *testing.T) {
 	}
 }
 
+func TestInitialTUIFocusIsTools(t *testing.T) {
+	state := initialTUIState()
+	if state.focus != focusTools {
+		t.Fatalf("initial focus = %v, want tools panel", state.focus)
+	}
+}
+
+func TestActiveFocusHintUsesDistinctColor(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 30)
+	drawTUI(screen, &tuiState{focus: focusTools})
+
+	_, _, titleStyle, _ := screen.GetContent(3, 0)
+	_, _, hintStyle, _ := screen.GetContent(10, 0)
+	if titleStyle == hintStyle {
+		t.Fatal("active focus hint should use a distinct style")
+	}
+}
+
 func TestEditorCursorNavigation(t *testing.T) {
-	state := tuiState{input: []rune("one\ntwo"), cursor: 1, inputWidth: 20}
+	state := tuiState{input: []rune("one\ntwo"), cursor: 1, inputWidth: 20, focus: focusInput}
 	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone))
 	if state.cursor != 2 {
 		t.Fatalf("right arrow moved cursor to %d, want 2", state.cursor)
@@ -79,24 +102,27 @@ func TestEditorCursorNavigation(t *testing.T) {
 }
 
 func TestEditorEnterAddsNewline(t *testing.T) {
-	state := tuiState{input: []rune("first"), cursor: 5}
+	state := tuiState{input: []rune("first"), cursor: 5, focus: focusInput}
 	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if got, want := string(state.input), "first\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-func TestRegexUsesSeparatePatternAndTextFields(t *testing.T) {
-	state := tuiState{regexPattern: []rune("foo"), regexText: []rune("foo bar foo")}
-	for index, tool := range tuiTools {
-		if tool.command == "regex" {
-			state.selected = index
-			break
-		}
+func TestSwitchingToolsClearsInputAndResult(t *testing.T) {
+	state := tuiState{
+		selected: 0,
+		input:    []rune("old input"),
+		cursor:   3,
+		focus:    focusTools,
+		result:   "old result",
 	}
-	runSelectedTool(&state)
-	if !strings.Contains(state.result, "2 match(es)") {
-		t.Fatalf("unexpected regex result: %q", state.result)
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	if state.selected != 1 {
+		t.Fatalf("selected = %d, want 1", state.selected)
+	}
+	if len(state.input) != 0 || state.cursor != 0 || state.result != "" {
+		t.Fatalf("tool state was not cleared: %#v", state)
 	}
 }
 
