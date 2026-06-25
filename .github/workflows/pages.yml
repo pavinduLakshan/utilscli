@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - utils-cli.png
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -29,6 +30,7 @@ jobs:
         run: |
           mkdir _site
           cp index.html _site/index.html
+          cp utils-cli.png _site/utils-cli.png
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
