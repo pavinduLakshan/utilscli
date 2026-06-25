@@ -12,6 +12,9 @@
     .tagline { color: #8b949e; font-size: 1.2rem; margin: .25rem 0 2rem; }
     code, pre { font: .9rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
     pre { overflow-x: auto; padding: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+    .screenshot { margin: 2rem 0 0; }
+    .screenshot img { display: block; width: 100%; height: auto; border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
+    .screenshot figcaption { margin-top: .65rem; color: #8b949e; font-size: .9rem; }
     .tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 12px; }
     .tool { position: relative; padding: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
     .tool h3 { margin: 0; font: 600 1rem ui-monospace, SFMono-Regular, Menlo, monospace; color: #79c0ff; }
@@ -33,7 +36,11 @@
   <header>
     <h1>Utils CLI</h1>
     <p class="tagline">The terminal-native day-today utility toolbox for developers.</p>
-    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Run <code>uc</code> to open the interactive terminal UI, or <code>uc --help</code> to list the available tools.</p>
+    <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Just run <code>uc</code> to show the interactive terminal UI, or use individual commands directly when you already know what you need.</p>
+    <figure class="screenshot">
+      <img src="utils-cli.png" alt="Utils CLI terminal UI showing available developer utility commands">
+      <figcaption>The terminal UI opens with <code>uc</code>.</figcaption>
+    </figure>
   </header>
 
   <section>
@@ -49,6 +56,7 @@
 
   <section>
     <h2>Available commands</h2>
+    <p>Every tool in the terminal UI is also available as an individual command, so workflows can be scripted or run directly from your shell.</p>
     <input id="command-search" class="command-search" type="search" placeholder="Search commands…" aria-label="Search available commands">
     <p id="search-status" class="search-status" aria-live="polite"></p>
     <div id="tool-grid" class="tool-grid">
