@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -64,6 +65,184 @@ func TestInteractiveMenu(t *testing.T) {
 	if r != 'T' {
 		t.Fatalf("tools panel was not rendered, got %q", r)
 	}
+}
+
+func TestInteractiveOutputCanScroll(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 20)
+
+	state := tuiState{result: strings.Join([]string{
+		"line 00", "line 01", "line 02", "line 03", "line 04",
+		"line 05", "line 06", "line 07", "line 08", "line 09",
+	}, "\n")}
+	drawTUI(screen, &state)
+	if got := simulationText(screen, 36, 13, 7); got != "line 00" {
+		t.Fatalf("initial output row = %q, want %q", got, "line 00")
+	}
+
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyPgDn, 0, tcell.ModNone))
+	drawTUI(screen, &state)
+	if got := simulationText(screen, 36, 13, 7); got == "line 00" {
+		t.Fatalf("output did not scroll after Page Down; first row is still %q", got)
+	}
+}
+
+func TestOutputScrollClampsToContent(t *testing.T) {
+	state := tuiState{
+		focus:        focusOutput,
+		result:       "one\ntwo\nthree\nfour\nfive",
+		outputWidth:  20,
+		outputHeight: 3,
+	}
+	for range 10 {
+		handleTUIKey(&state, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	}
+	if got, want := state.outputOffset, 2; got != want {
+		t.Fatalf("output offset = %d, want clamped offset %d", got, want)
+	}
+	for range 10 {
+		handleTUIKey(&state, tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone))
+	}
+	if state.outputOffset != 0 {
+		t.Fatalf("output offset = %d, want 0", state.outputOffset)
+	}
+}
+
+func TestShortOutputDoesNotScroll(t *testing.T) {
+	state := tuiState{focus: focusOutput, result: "one line", outputWidth: 20, outputHeight: 3}
+	handleTUIKey(&state, tcell.NewEventKey(tcell.KeyPgDn, 0, tcell.ModNone))
+	if state.outputOffset != 0 {
+		t.Fatalf("short output offset = %d, want 0", state.outputOffset)
+	}
+}
+
+func TestRunningToolResetsOutputScroll(t *testing.T) {
+	state := tuiState{input: []rune("hello"), outputOffset: 8}
+	runSelectedTool(&state)
+	if state.outputOffset != 0 {
+		t.Fatalf("output offset = %d after running tool, want 0", state.outputOffset)
+	}
+}
+
+func TestCopyOutputToClipboard(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	var systemClipboard string
+	writeSystemClipboard = func(value string) error {
+		systemClipboard = value
+		return nil
+	}
+	state := tuiState{result: "copy me"}
+	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
+	if got, want := string(screen.GetClipboardData()), state.result; got != want {
+		t.Fatalf("terminal clipboard = %q, want %q", got, want)
+	}
+	if got, want := systemClipboard, state.result; got != want {
+		t.Fatalf("system clipboard = %q, want %q", got, want)
+	}
+	if state.status != "Output copied" {
+		t.Fatalf("copy status = %q, want success", state.status)
+	}
+}
+
+func TestCopyStatusIsRenderedInOutputPane(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 20)
+	state := tuiState{result: "copy me", status: "Output copied"}
+	drawTUI(screen, &state)
+	if got, want := simulationText(screen, 36, 13, 15), "✓ Output copied"; got != want {
+		t.Fatalf("copy notification = %q, want %q", got, want)
+	}
+}
+
+func TestCopyOutputReportsSystemClipboardFailure(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	writeSystemClipboard = func(string) error { return errors.New("clipboard unavailable") }
+	state := tuiState{result: "copy me"}
+	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
+	if got := string(screen.GetClipboardData()); got != state.result {
+		t.Fatalf("terminal clipboard fallback = %q, want %q", got, state.result)
+	}
+	if !strings.Contains(state.status, "terminal") {
+		t.Fatalf("copy failure status = %q, want terminal fallback notice", state.status)
+	}
+}
+
+func TestCopyWithEmptyOutputIsNoOp(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	called := false
+	writeSystemClipboard = func(string) error {
+		called = true
+		return nil
+	}
+	state := tuiState{}
+	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
+	if called {
+		t.Fatal("system clipboard was called for empty output")
+	}
+	if state.status != "No output to copy" {
+		t.Fatalf("empty copy status = %q, want no-output notice", state.status)
+	}
+}
+
+func TestMouseWheelScrollsOutput(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	state := tuiState{result: "one\ntwo\nthree\nfour", outputWidth: 20, outputHeight: 2}
+	handleTUIEvent(screen, &state, tcell.NewEventMouse(0, 0, tcell.WheelDown, tcell.ModNone))
+	if got, want := state.outputOffset, 2; got != want {
+		t.Fatalf("mouse wheel output offset = %d, want %d", got, want)
+	}
+}
+
+func TestTabCyclesThroughOutput(t *testing.T) {
+	state := initialTUIState()
+	advanceFocus(&state)
+	advanceFocus(&state)
+	if state.focus != focusOutput {
+		t.Fatalf("focus = %v after two tabs, want output", state.focus)
+	}
+	advanceFocus(&state)
+	if state.focus != focusTools {
+		t.Fatalf("focus = %v after three tabs, want tools", state.focus)
+	}
+}
+
+func simulationText(screen tcell.SimulationScreen, x, y, width int) string {
+	runes := make([]rune, 0, width)
+	for column := x; column < x+width; column++ {
+		char, _, _, _ := screen.GetContent(column, y)
+		runes = append(runes, char)
+	}
+	return string(runes)
 }
 
 func TestInitialTUIFocusIsTools(t *testing.T) {

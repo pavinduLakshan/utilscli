@@ -36,12 +36,16 @@ var tuiTools = []toolDefinition{
 }
 
 type tuiState struct {
-	selected   int
-	input      []rune
-	cursor     int
-	inputWidth int
-	focus      tuiFocus
-	result     string
+	selected     int
+	input        []rune
+	cursor       int
+	inputWidth   int
+	focus        tuiFocus
+	result       string
+	outputOffset int
+	outputWidth  int
+	outputHeight int
+	status       string
 }
 
 type tuiFocus int
@@ -49,6 +53,7 @@ type tuiFocus int
 const (
 	focusInput tuiFocus = iota
 	focusTools
+	focusOutput
 )
 
 type toolInputMode int
@@ -87,6 +92,8 @@ func runInteractive(in io.Reader, out io.Writer) error {
 		return fmt.Errorf("start terminal UI: %w", err)
 	}
 	defer screen.Fini()
+	screen.EnableMouse()
+	defer screen.DisableMouse()
 
 	state := initialTUIState()
 	for {
@@ -109,7 +116,18 @@ func handleTUIEvent(screen tcell.Screen, state *tuiState, event tcell.Event) boo
 	case *tcell.EventResize:
 		screen.Sync()
 	case *tcell.EventKey:
+		if event.Key() == tcell.KeyCtrlY {
+			copyOutput(screen, state)
+			return false
+		}
 		return handleTUIKey(state, event)
+	case *tcell.EventMouse:
+		switch event.Buttons() {
+		case tcell.WheelUp:
+			scrollOutput(state, -3)
+		case tcell.WheelDown:
+			scrollOutput(state, 3)
+		}
 	}
 	return false
 }
@@ -121,22 +139,41 @@ func isTerminal(file *os.File) bool {
 
 // handleTUIKey updates the UI and reports whether it should exit.
 func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
+	state.status = ""
 	switch event.Key() {
 	case tcell.KeyCtrlC, tcell.KeyEscape:
 		return true
 	case tcell.KeyTAB:
 		advanceFocus(state)
 	case tcell.KeyUp:
-		if state.focus == focusTools && state.selected > 0 {
+		if state.focus == focusOutput {
+			scrollOutput(state, -1)
+		} else if state.focus == focusTools && state.selected > 0 {
 			selectTool(state, state.selected-1)
 		} else if input, cursor := activeInput(state); input != nil {
 			*cursor = moveCursorVertical(*input, *cursor, -1, state.inputWidth)
 		}
 	case tcell.KeyDown:
-		if state.focus == focusTools && state.selected < len(tuiTools)-1 {
+		if state.focus == focusOutput {
+			scrollOutput(state, 1)
+		} else if state.focus == focusTools && state.selected < len(tuiTools)-1 {
 			selectTool(state, state.selected+1)
 		} else if input, cursor := activeInput(state); input != nil {
 			*cursor = moveCursorVertical(*input, *cursor, 1, state.inputWidth)
+		}
+	case tcell.KeyPgUp:
+		state.focus = focusOutput
+		scrollOutput(state, -max(1, state.outputHeight))
+	case tcell.KeyPgDn:
+		state.focus = focusOutput
+		scrollOutput(state, max(1, state.outputHeight))
+	case tcell.KeyHome:
+		if state.focus == focusOutput {
+			state.outputOffset = 0
+		}
+	case tcell.KeyEnd:
+		if state.focus == focusOutput {
+			state.outputOffset = maxOutputOffset(state)
 		}
 	case tcell.KeyLeft:
 		if _, cursor := activeInput(state); cursor != nil && *cursor > 0 {
@@ -188,16 +225,25 @@ func clearToolState(state *tuiState) {
 	state.input = nil
 	state.cursor = 0
 	state.result = ""
+	state.outputOffset = 0
+	state.status = ""
 }
 
 func advanceFocus(state *tuiState) {
 	switch selectedInputMode(state) {
 	case inputNone:
-		state.focus = focusTools
-	default:
 		if state.focus == focusTools {
-			state.focus = focusInput
+			state.focus = focusOutput
 		} else {
+			state.focus = focusTools
+		}
+	default:
+		switch state.focus {
+		case focusTools:
+			state.focus = focusInput
+		case focusInput:
+			state.focus = focusOutput
+		default:
 			state.focus = focusTools
 		}
 	}
@@ -226,6 +272,8 @@ func insertInputRune(input *[]rune, cursor *int, char rune) {
 func runSelectedTool(state *tuiState) {
 	tool := tuiTools[state.selected]
 	input := string(state.input)
+	state.outputOffset = 0
+	state.status = ""
 	result, err := execute(tool.command, input)
 	if err != nil {
 		state.result = "Error: " + err.Error()
@@ -262,11 +310,11 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 	drawText(screen, rightX+2, 2, rightWidth-4, tuiTools[state.selected].description, mutedStyle)
 	switch selectedInputMode(state) {
 	case inputNone:
-		drawNoInputView(screen, state.result, rightX+2, rightWidth-4, height, titleStyle, mutedStyle)
+		drawNoInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle, mutedStyle)
 	default:
-		drawTextInputView(screen, *state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
+		drawTextInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	}
-	drawText(screen, 0, height-1, width, "Tab switches panes · arrows move the active pane · Enter adds a line · Ctrl+R runs · Esc exits", mutedStyle)
+	drawText(screen, 0, height-1, width, "Tab switches panes · PgUp/PgDn scroll output · Ctrl+Y copies · Ctrl+R runs · Esc exits", mutedStyle)
 	screen.Show()
 }
 
@@ -290,25 +338,71 @@ func drawTools(screen tcell.Screen, state tuiState, x, y, width, height int) {
 	}
 }
 
-func drawTextInputView(screen tcell.Screen, state tuiState, x, width, screenHeight int, titleStyle, activeStyle tcell.Style) {
+func drawTextInputView(screen tcell.Screen, state *tuiState, x, width, screenHeight int, titleStyle, activeStyle tcell.Style) {
 	inputHeight := max(3, screenHeight/3)
 	drawTitle(screen, x, 4, width, "Input", state.focus == focusInput, titleStyle, activeStyle)
 	drawInput(screen, state.input, state.cursor, state.focus == focusInput, x, 5, width, inputHeight, "Type input here")
-	drawOutput(screen, state.result, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle)
+	drawOutput(screen, state, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle, activeStyle)
 }
 
-func drawNoInputView(screen tcell.Screen, result string, x, width, screenHeight int, titleStyle, mutedStyle tcell.Style) {
+func drawNoInputView(screen tcell.Screen, state *tuiState, x, width, screenHeight int, titleStyle, activeStyle, mutedStyle tcell.Style) {
 	drawText(screen, x, 4, width, "No input required", titleStyle)
 	drawText(screen, x, 5, width, "Press Enter or Ctrl+R to generate a result.", mutedStyle)
-	drawOutput(screen, result, x, 7, width, screenHeight-10, titleStyle)
+	drawOutput(screen, state, x, 7, width, screenHeight-10, titleStyle, activeStyle)
 }
 
-func drawOutput(screen tcell.Screen, result string, x, y, width, height int, titleStyle tcell.Style) {
-	drawText(screen, x, y, width, "Output", titleStyle)
+func drawOutput(screen tcell.Screen, state *tuiState, x, y, width, height int, titleStyle, activeStyle tcell.Style) {
+	contentY := y + 1
+	contentHeight := height
+	if state.status != "" {
+		statusStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorYellow)
+		prefix := "! "
+		if state.status == "Output copied" {
+			statusStyle = tcell.StyleDefault.Bold(true).Foreground(tcell.ColorGreen)
+			prefix = "✓ "
+		}
+		drawText(screen, x, contentY, width, prefix+state.status, statusStyle)
+		contentY++
+		contentHeight = max(0, contentHeight-1)
+	}
+	state.outputWidth = width
+	state.outputHeight = max(0, contentHeight)
+	state.outputOffset = min(max(state.outputOffset, 0), maxOutputOffset(state))
+	title := "Output"
+	lineCount := len(wrapTUI(state.result, width))
+	if lineCount > contentHeight && contentHeight > 0 {
+		title = fmt.Sprintf("Output [%d–%d/%d]", state.outputOffset+1, min(state.outputOffset+contentHeight, lineCount), lineCount)
+	}
+	drawTitle(screen, x, y, width, title, state.focus == focusOutput, titleStyle, activeStyle)
+	result := state.result
 	if result == "" {
 		result = "Output appears here after you run the tool."
 	}
-	drawLines(screen, x, y+1, width, height, result, tcell.StyleDefault)
+	drawLines(screen, x, contentY, width, contentHeight, state.outputOffset, result, tcell.StyleDefault)
+}
+
+func scrollOutput(state *tuiState, delta int) {
+	state.outputOffset = min(max(state.outputOffset+delta, 0), maxOutputOffset(state))
+}
+
+func copyOutput(screen tcell.Screen, state *tuiState) {
+	if state.result == "" {
+		state.status = "No output to copy"
+		return
+	}
+	screen.SetClipboard([]byte(state.result))
+	if err := writeSystemClipboard(state.result); err != nil {
+		state.status = "Copy sent to terminal; clipboard access may be blocked"
+		return
+	}
+	state.status = "Output copied"
+}
+
+func maxOutputOffset(state *tuiState) int {
+	if state.outputWidth < 1 || state.outputHeight < 1 || state.result == "" {
+		return 0
+	}
+	return max(0, len(wrapTUI(state.result, state.outputWidth))-state.outputHeight)
 }
 
 func drawInput(screen tcell.Screen, input []rune, cursor int, active bool, x, y, width, height int, placeholder string) {
@@ -407,13 +501,13 @@ func drawTitle(screen tcell.Screen, x, y, width int, title string, active bool, 
 	drawText(screen, x+offset, y, width-offset, " (active · Tab switches focus)", activeStyle)
 }
 
-func drawLines(screen tcell.Screen, x, y, width, height int, value string, style tcell.Style) {
+func drawLines(screen tcell.Screen, x, y, width, height, offset int, value string, style tcell.Style) {
 	lines := wrapTUI(value, width)
 	if len(lines) == 0 {
 		drawText(screen, x, y, width, "Type input here", style.Foreground(tcell.ColorGray))
 		return
 	}
-	for row, line := range lines {
+	for row, line := range lines[offset:] {
 		if row >= height {
 			return
 		}
