@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/pavinduLakshan/utilscli/main/instal
 
 ## Usage
 
-Run `uc` with no arguments to open the interactive terminal UI. The tools panel is active first: use the arrow keys to choose a tool, then press Tab to focus that tool's editor. Enter adds a line to an active editor; Ctrl+R runs the selected tool. UUID and password generation do not require input.
+Run `uc` with no arguments to open the interactive terminal UI. The tools panel is active first: use the arrow keys to choose a tool, then press Tab to move between the tool list, editor, and output. Enter adds a line to an active editor; Ctrl+R runs the selected tool. Long output can be scrolled with Page Up/Page Down, the arrow keys while the output is active, or the mouse wheel. Ctrl+Y copies the complete output to the terminal clipboard. UUID and password generation do not require input.
 
 Individual commands are also supported. See the documentation for all supported commands.
 
