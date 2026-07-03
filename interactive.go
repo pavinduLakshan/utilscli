@@ -314,11 +314,7 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 	default:
 		drawTextInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	}
-	footer := "Tab switches panes · PgUp/PgDn scroll output · Ctrl+Y copies · Ctrl+R runs · Esc exits"
-	if state.status != "" {
-		footer = state.status + " · " + footer
-	}
-	drawText(screen, 0, height-1, width, footer, mutedStyle)
+	drawText(screen, 0, height-1, width, "Tab switches panes · PgUp/PgDn scroll output · Ctrl+Y copies · Ctrl+R runs · Esc exits", mutedStyle)
 	screen.Show()
 }
 
@@ -356,20 +352,33 @@ func drawNoInputView(screen tcell.Screen, state *tuiState, x, width, screenHeigh
 }
 
 func drawOutput(screen tcell.Screen, state *tuiState, x, y, width, height int, titleStyle, activeStyle tcell.Style) {
+	contentY := y + 1
+	contentHeight := height
+	if state.status != "" {
+		statusStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorYellow)
+		prefix := "! "
+		if state.status == "Output copied" {
+			statusStyle = tcell.StyleDefault.Bold(true).Foreground(tcell.ColorGreen)
+			prefix = "✓ "
+		}
+		drawText(screen, x, contentY, width, prefix+state.status, statusStyle)
+		contentY++
+		contentHeight = max(0, contentHeight-1)
+	}
 	state.outputWidth = width
-	state.outputHeight = max(0, height)
+	state.outputHeight = max(0, contentHeight)
 	state.outputOffset = min(max(state.outputOffset, 0), maxOutputOffset(state))
 	title := "Output"
 	lineCount := len(wrapTUI(state.result, width))
-	if lineCount > height && height > 0 {
-		title = fmt.Sprintf("Output [%d–%d/%d]", state.outputOffset+1, min(state.outputOffset+height, lineCount), lineCount)
+	if lineCount > contentHeight && contentHeight > 0 {
+		title = fmt.Sprintf("Output [%d–%d/%d]", state.outputOffset+1, min(state.outputOffset+contentHeight, lineCount), lineCount)
 	}
 	drawTitle(screen, x, y, width, title, state.focus == focusOutput, titleStyle, activeStyle)
 	result := state.result
 	if result == "" {
 		result = "Output appears here after you run the tool."
 	}
-	drawLines(screen, x, y+1, width, height, state.outputOffset, result, tcell.StyleDefault)
+	drawLines(screen, x, contentY, width, contentHeight, state.outputOffset, result, tcell.StyleDefault)
 }
 
 func scrollOutput(state *tuiState, delta int) {

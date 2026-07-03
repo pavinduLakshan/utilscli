@@ -154,6 +154,20 @@ func TestCopyOutputToClipboard(t *testing.T) {
 	}
 }
 
+func TestCopyStatusIsRenderedInOutputPane(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 20)
+	state := tuiState{result: "copy me", status: "Output copied"}
+	drawTUI(screen, &state)
+	if got, want := simulationText(screen, 36, 13, 15), "✓ Output copied"; got != want {
+		t.Fatalf("copy notification = %q, want %q", got, want)
+	}
+}
+
 func TestCopyOutputReportsSystemClipboardFailure(t *testing.T) {
 	screen := tcell.NewSimulationScreen("UTF-8")
 	if err := screen.Init(); err != nil {

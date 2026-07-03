@@ -41,6 +41,6 @@ The TUI state tracks selection, input cursor, focus, and result text, but it doe
   - Negative/edge cases: Short/empty output must not scroll; resize and line wrapping must not leave the viewport beyond the end; copying with no output should be a no-op.
 
 ## Tests Summary
-- **Tests created:** Long-output Page Down rendering, output offset clamping, short-output no-op scrolling, offset reset after execution, native and terminal clipboard copy paths, clipboard failure feedback, empty-output copy behavior, mouse-wheel scrolling, and Tab focus cycling through output.
+- **Tests created:** Long-output Page Down rendering, output offset clamping, short-output no-op scrolling, offset reset after execution, native and terminal clipboard copy paths, in-pane copy confirmation, clipboard failure feedback, empty-output copy behavior, mouse-wheel scrolling, and Tab focus cycling through output.
 - **Component and module targeted:** Interactive terminal UI state, event handling, rendering, and platform clipboard command selection in `interactive.go` and `clipboard.go`, exercised from `main_test.go` with tcell's simulation screen.
 - **Assumptions or limitations:** Native copying uses `pbcopy` on macOS, `wl-copy`/`xclip`/`xsel` on Linux, and `clip` on Windows. OSC 52 remains as a fallback for remote or supported terminals.
