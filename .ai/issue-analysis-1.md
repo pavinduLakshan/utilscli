@@ -22,6 +22,16 @@
 ## Root Cause Analysis
 The TUI state tracks selection, input cursor, focus, and result text, but it does not track an output scroll offset or output viewport height. The output pane is not focusable, Page Up/Page Down are ignored, and `drawLines` unconditionally begins at wrapped line zero. As a result, long output is clipped at the bottom of the available terminal area.
 
+### Follow-up: Ctrl+Y does not update the system clipboard
+- **Classification:** Bug, medium severity, affecting interactive output copying.
+- **Reproducible:** Yes, on macOS arm64 with the real tcell TUI in an xterm-compatible PTY.
+- **Steps Executed:** Built and started `./bin/uc`, entered `hello` in the Base64 encoder, ran it with Ctrl+R, pressed Ctrl+Y, exited, and compared the macOS clipboard with the expected `aGVsbG8=` output.
+- **Expected Behavior:** The system clipboard contains the complete output.
+- **Actual Behavior:** The TUI emitted OSC 52 with the correct Base64-encoded clipboard payload, but `pbpaste` did not return the expected output.
+- **Logs/Evidence:** The frontend emitted `ESC ] 52 ; c ; YUdWc2JHOD0= ESC \\`; the subsequent clipboard comparison exited with status 1. tcell documents that terminals may block `SetClipboard` for security reasons.
+- **Root Cause:** The implementation relies solely on tcell's OSC 52 terminal request. This request has no success signal and may be ignored, while the simulation screen only stores the request internally. A native OS clipboard path and user-visible result are required.
+- **Post-fix verification:** Repeated the same real-TUI workflow after adding the native clipboard path. The footer reported `Output copied`, and `pbpaste` matched `aGVsbG8=` with exit status 0. The original clipboard was restored afterward.
+
 ## Test Coverage Assessment
 - **Existing tests covering this path:** `TestInteractiveMenu` checks only that the primary panels render; input focus and cursor tests cover keyboard behavior for tools and the editor.
 - **Coverage gaps identified:** No test covered output overflow, scrolling, offset clamping, output focus, or copying output.
@@ -31,6 +41,6 @@ The TUI state tracks selection, input cursor, focus, and result text, but it doe
   - Negative/edge cases: Short/empty output must not scroll; resize and line wrapping must not leave the viewport beyond the end; copying with no output should be a no-op.
 
 ## Tests Summary
-- **Tests created:** Long-output Page Down rendering, output offset clamping, short-output no-op scrolling, offset reset after execution, terminal clipboard copy, mouse-wheel scrolling, and Tab focus cycling through output.
-- **Component and module targeted:** Interactive terminal UI state, event handling, and rendering in `interactive.go`, exercised from `main_test.go` with tcell's simulation screen.
-- **Assumptions or limitations:** Clipboard integration uses tcell's terminal clipboard support (OSC 52 where available), which a terminal may ignore according to its clipboard/security settings.
+- **Tests created:** Long-output Page Down rendering, output offset clamping, short-output no-op scrolling, offset reset after execution, native and terminal clipboard copy paths, clipboard failure feedback, empty-output copy behavior, mouse-wheel scrolling, and Tab focus cycling through output.
+- **Component and module targeted:** Interactive terminal UI state, event handling, rendering, and platform clipboard command selection in `interactive.go` and `clipboard.go`, exercised from `main_test.go` with tcell's simulation screen.
+- **Assumptions or limitations:** Native copying uses `pbcopy` on macOS, `wl-copy`/`xclip`/`xsel` on Linux, and `clip` on Windows. OSC 52 remains as a fallback for remote or supported terminals.

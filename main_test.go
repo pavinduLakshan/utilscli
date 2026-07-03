@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -133,10 +134,65 @@ func TestCopyOutputToClipboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	var systemClipboard string
+	writeSystemClipboard = func(value string) error {
+		systemClipboard = value
+		return nil
+	}
 	state := tuiState{result: "copy me"}
 	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
 	if got, want := string(screen.GetClipboardData()), state.result; got != want {
-		t.Fatalf("clipboard = %q, want %q", got, want)
+		t.Fatalf("terminal clipboard = %q, want %q", got, want)
+	}
+	if got, want := systemClipboard, state.result; got != want {
+		t.Fatalf("system clipboard = %q, want %q", got, want)
+	}
+	if state.status != "Output copied" {
+		t.Fatalf("copy status = %q, want success", state.status)
+	}
+}
+
+func TestCopyOutputReportsSystemClipboardFailure(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	writeSystemClipboard = func(string) error { return errors.New("clipboard unavailable") }
+	state := tuiState{result: "copy me"}
+	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
+	if got := string(screen.GetClipboardData()); got != state.result {
+		t.Fatalf("terminal clipboard fallback = %q, want %q", got, state.result)
+	}
+	if !strings.Contains(state.status, "terminal") {
+		t.Fatalf("copy failure status = %q, want terminal fallback notice", state.status)
+	}
+}
+
+func TestCopyWithEmptyOutputIsNoOp(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	original := writeSystemClipboard
+	defer func() { writeSystemClipboard = original }()
+	called := false
+	writeSystemClipboard = func(string) error {
+		called = true
+		return nil
+	}
+	state := tuiState{}
+	handleTUIEvent(screen, &state, tcell.NewEventKey(tcell.KeyCtrlY, 0, tcell.ModCtrl))
+	if called {
+		t.Fatal("system clipboard was called for empty output")
+	}
+	if state.status != "No output to copy" {
+		t.Fatalf("empty copy status = %q, want no-output notice", state.status)
 	}
 }
 

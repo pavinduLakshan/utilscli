@@ -45,6 +45,7 @@ type tuiState struct {
 	outputOffset int
 	outputWidth  int
 	outputHeight int
+	status       string
 }
 
 type tuiFocus int
@@ -116,9 +117,7 @@ func handleTUIEvent(screen tcell.Screen, state *tuiState, event tcell.Event) boo
 		screen.Sync()
 	case *tcell.EventKey:
 		if event.Key() == tcell.KeyCtrlY {
-			if state.result != "" {
-				screen.SetClipboard([]byte(state.result))
-			}
+			copyOutput(screen, state)
 			return false
 		}
 		return handleTUIKey(state, event)
@@ -140,6 +139,7 @@ func isTerminal(file *os.File) bool {
 
 // handleTUIKey updates the UI and reports whether it should exit.
 func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
+	state.status = ""
 	switch event.Key() {
 	case tcell.KeyCtrlC, tcell.KeyEscape:
 		return true
@@ -226,6 +226,7 @@ func clearToolState(state *tuiState) {
 	state.cursor = 0
 	state.result = ""
 	state.outputOffset = 0
+	state.status = ""
 }
 
 func advanceFocus(state *tuiState) {
@@ -272,6 +273,7 @@ func runSelectedTool(state *tuiState) {
 	tool := tuiTools[state.selected]
 	input := string(state.input)
 	state.outputOffset = 0
+	state.status = ""
 	result, err := execute(tool.command, input)
 	if err != nil {
 		state.result = "Error: " + err.Error()
@@ -312,7 +314,11 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 	default:
 		drawTextInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	}
-	drawText(screen, 0, height-1, width, "Tab switches panes · PgUp/PgDn scroll output · Ctrl+Y copies · Ctrl+R runs · Esc exits", mutedStyle)
+	footer := "Tab switches panes · PgUp/PgDn scroll output · Ctrl+Y copies · Ctrl+R runs · Esc exits"
+	if state.status != "" {
+		footer = state.status + " · " + footer
+	}
+	drawText(screen, 0, height-1, width, footer, mutedStyle)
 	screen.Show()
 }
 
@@ -368,6 +374,19 @@ func drawOutput(screen tcell.Screen, state *tuiState, x, y, width, height int, t
 
 func scrollOutput(state *tuiState, delta int) {
 	state.outputOffset = min(max(state.outputOffset+delta, 0), maxOutputOffset(state))
+}
+
+func copyOutput(screen tcell.Screen, state *tuiState) {
+	if state.result == "" {
+		state.status = "No output to copy"
+		return
+	}
+	screen.SetClipboard([]byte(state.result))
+	if err := writeSystemClipboard(state.result); err != nil {
+		state.status = "Copy sent to terminal; clipboard access may be blocked"
+		return
+	}
+	state.status = "Output copied"
 }
 
 func maxOutputOffset(state *tuiState) int {
