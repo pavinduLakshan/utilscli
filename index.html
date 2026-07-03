@@ -26,6 +26,9 @@
     .install-command { position: relative; }
     .install-command .copy-command { top: 10px; right: 10px; bottom: auto; padding: 4px 8px; font-size: 1rem; opacity: 1; }
     .note { padding: 14px 16px; border-left: 3px solid #58a6ff; background: #161b22; border-radius: 0 8px 8px 0; }
+    .shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; padding: 0; list-style: none; }
+    .shortcut-grid li { padding: 12px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; }
+    kbd { display: inline-block; margin-right: .35rem; padding: .1rem .4rem; border: 1px solid #484f58; border-bottom-width: 2px; border-radius: 5px; background: #21262d; color: #e6edf3; font: .82rem ui-monospace, SFMono-Regular, Menlo, monospace; }
     .command-search { width: 100%; box-sizing: border-box; margin: 0 0 1rem; padding: .7rem .85rem; border: 1px solid #30363d; border-radius: 8px; background: #161b22; color: #e6edf3; font: inherit; }
     .command-search:focus { outline: 2px solid #58a6ff; outline-offset: 2px; }
     .search-status { min-height: 1.55em; margin: -.55rem 0 1rem; color: #8b949e; font-size: .9rem; }
@@ -35,7 +38,7 @@
 <body>
   <header>
     <h1>Utils CLI</h1>
-    <p class="tagline">The terminal-native day-today utility toolbox for developers.</p>
+    <p class="tagline">The terminal-native day-to-day utility toolbox for developers.</p>
     <p>Encode, decode, format, generate, and inspect common support data without leaving your shell. Just run <code>uc</code> to show the interactive terminal UI, or use individual commands directly when you already know what you need.</p>
     <figure class="screenshot">
       <img src="utils-cli.png" alt="Utils CLI terminal UI showing available developer utility commands">
@@ -52,6 +55,22 @@
     <p>The installer downloads the correct binary from the latest GitHub release, installs it to <code>~/.local/bin</code>, and adds that location to your shell startup file when needed. Open a new terminal afterwards.</p>
       <pre><code>uc b64-encode osidosodi
 # b3NpZG9zb2Rp</code></pre>
+  </section>
+
+  <section>
+    <h2>Interactive terminal UI</h2>
+    <p>Run <code>uc</code> without arguments to browse tools, edit input, and inspect output without leaving the terminal. Long results have a scrollable output pane with a visible position indicator.</p>
+    <ul class="shortcut-grid">
+      <li><kbd>↑</kbd><kbd>↓</kbd>Move through the active pane.</li>
+      <li><kbd>Tab</kbd>Switch between tools, input, and output.</li>
+      <li><kbd>Ctrl</kbd>+<kbd>R</kbd>Run the selected tool.</li>
+      <li><kbd>PgUp</kbd><kbd>PgDn</kbd>Scroll long output by a page.</li>
+      <li><kbd>Home</kbd><kbd>End</kbd>Jump to the start or end of active output.</li>
+      <li><kbd>Mouse wheel</kbd>Scroll the output pane.</li>
+      <li><kbd>Ctrl</kbd>+<kbd>Y</kbd>Copy the complete output to the system clipboard.</li>
+      <li><kbd>Esc</kbd>Exit the interactive UI.</li>
+    </ul>
+    <p class="note">After copying, the output pane shows a green <strong>✓ Output copied</strong> confirmation. If there is no output or only terminal clipboard fallback is available, it shows a yellow explanatory message instead.</p>
   </section>
 
   <section>
