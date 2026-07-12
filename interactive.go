@@ -33,6 +33,7 @@ var tuiTools = []toolDefinition{
 	{"uuid", "Generate a UUID"},
 	{"password", "Generate a password"},
 	{"timestamp", "Convert a timestamp or date"},
+	{"api", "Send an HTTP request and view the response"},
 }
 
 type tuiState struct {
@@ -340,7 +341,7 @@ func drawTools(screen tcell.Screen, state tuiState, x, y, width, height int) {
 
 func drawTextInputView(screen tcell.Screen, state *tuiState, x, width, screenHeight int, titleStyle, activeStyle tcell.Style) {
 	inputHeight := max(3, screenHeight/3)
-	drawTitle(screen, x, 4, width, "Input", state.focus == focusInput, titleStyle, activeStyle)
+	drawTitle(screen, x, 4, width, "Input", state.focus == focusInput, titleStyle, activeStyle, " (active · Tab switches focus)")
 	drawInput(screen, state.input, state.cursor, state.focus == focusInput, x, 5, width, inputHeight, "Type input here")
 	drawOutput(screen, state, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle, activeStyle)
 }
@@ -373,7 +374,7 @@ func drawOutput(screen tcell.Screen, state *tuiState, x, y, width, height int, t
 	if lineCount > contentHeight && contentHeight > 0 {
 		title = fmt.Sprintf("Output [%d–%d/%d]", state.outputOffset+1, min(state.outputOffset+contentHeight, lineCount), lineCount)
 	}
-	drawTitle(screen, x, y, width, title, state.focus == focusOutput, titleStyle, activeStyle)
+	drawTitle(screen, x, y, width, title, state.focus == focusOutput, titleStyle, activeStyle, " (active · Tab switches focus)")
 	result := state.result
 	if result == "" {
 		result = "Output appears here after you run the tool."
@@ -474,6 +475,10 @@ func moveCursorVertical(input []rune, cursor, direction, width int) int {
 }
 
 func drawBox(screen tcell.Screen, x, y, width, height int, title string, active bool, style, activeStyle tcell.Style) {
+	drawBoxWithHint(screen, x, y, width, height, title, active, style, activeStyle, " (active · Tab switches focus)")
+}
+
+func drawBoxWithHint(screen tcell.Screen, x, y, width, height int, title string, active bool, style, activeStyle tcell.Style, hint string) {
 	if width < 2 || height < 2 {
 		return
 	}
@@ -489,16 +494,16 @@ func drawBox(screen tcell.Screen, x, y, width, height int, title string, active 
 	screen.SetContent(x+width-1, y, '┐', nil, style)
 	screen.SetContent(x, y+height-1, '└', nil, style)
 	screen.SetContent(x+width-1, y+height-1, '┘', nil, style)
-	drawTitle(screen, x+2, y, width-4, " "+title, active, style.Bold(true), activeStyle)
+	drawTitle(screen, x+2, y, width-4, " "+title, active, style.Bold(true), activeStyle, hint)
 }
 
-func drawTitle(screen tcell.Screen, x, y, width int, title string, active bool, titleStyle, activeStyle tcell.Style) {
+func drawTitle(screen tcell.Screen, x, y, width int, title string, active bool, titleStyle, activeStyle tcell.Style, hint string) {
 	drawText(screen, x, y, width, title, titleStyle)
 	if !active {
 		return
 	}
 	offset := len([]rune(title))
-	drawText(screen, x+offset, y, width-offset, " (active · Tab switches focus)", activeStyle)
+	drawText(screen, x+offset, y, width-offset, hint, activeStyle)
 }
 
 func drawLines(screen tcell.Screen, x, y, width, height, offset int, value string, style tcell.Style) {

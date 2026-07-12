@@ -44,6 +44,10 @@
       <img src="utils-cli.png" alt="Utils CLI terminal UI showing available developer utility commands">
       <figcaption>The terminal UI opens with <code>uc</code>.</figcaption>
     </figure>
+    <figure class="screenshot">
+      <img src="utils-cli-api-client.png" alt="uc api Postman-style terminal API client with request history, headers, and response panels">
+      <figcaption>The Postman-style API client opens with <code>uc api</code>.</figcaption>
+    </figure>
   </header>
 
   <section>
@@ -55,22 +59,6 @@
     <p>The installer downloads the correct binary from the latest GitHub release, installs it to <code>~/.local/bin</code>, and adds that location to your shell startup file when needed. Open a new terminal afterwards.</p>
       <pre><code>uc b64-encode osidosodi
 # b3NpZG9zb2Rp</code></pre>
-  </section>
-
-  <section>
-    <h2>Interactive terminal UI</h2>
-    <p>Run <code>uc</code> without arguments to browse tools, edit input, and inspect output without leaving the terminal. Long results have a scrollable output pane with a visible position indicator.</p>
-    <ul class="shortcut-grid">
-      <li><kbd>↑</kbd><kbd>↓</kbd>Move through the active pane.</li>
-      <li><kbd>Tab</kbd>Switch between tools, input, and output.</li>
-      <li><kbd>Ctrl</kbd>+<kbd>R</kbd>Run the selected tool.</li>
-      <li><kbd>PgUp</kbd><kbd>PgDn</kbd>Scroll long output by a page.</li>
-      <li><kbd>Home</kbd><kbd>End</kbd>Jump to the start or end of active output.</li>
-      <li><kbd>Mouse wheel</kbd>Scroll the output pane.</li>
-      <li><kbd>Ctrl</kbd>+<kbd>Y</kbd>Copy the complete output to the system clipboard.</li>
-      <li><kbd>Esc</kbd>Exit the interactive UI.</li>
-    </ul>
-    <p class="note">After copying, the output pane shows a green <strong>✓ Output copied</strong> confirmation. If there is no output or only terminal clipboard fallback is available, it shows a yellow explanatory message instead.</p>
   </section>
 
   <section>
@@ -97,6 +85,7 @@
       <article class="tool"><h3>uuid</h3><p>Generate a version 4 UUID; supports <code>--count</code> up to 100.</p><code>uc uuid --count 3</code></article>
       <article class="tool"><h3>password</h3><p>Generate a random password; supports <code>--length</code> and <code>--symbols</code>.</p><code>uc password --length 24 --symbols</code></article>
       <article class="tool"><h3>timestamp</h3><p>Convert a Unix timestamp or an RFC 3339 date.</p><code>uc timestamp 1710000000</code></article>
+      <article class="tool"><h3>api</h3><p>Open a Postman-style request builder UI.</p><code>uc api</code></article>
     </div>
   </section>
   <script>

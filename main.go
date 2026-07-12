@@ -53,6 +53,13 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	if command == "" {
 		return fmt.Errorf("unknown command %q; run 'uc --help' for commands", args[0])
 	}
+	if command == "api" && len(commandArgs) == 0 {
+		if inFile, ok := in.(*os.File); ok && isTerminal(inFile) {
+			if outFile, ok := out.(*os.File); ok && isTerminal(outFile) {
+				return runAPITUI(in, out)
+			}
+		}
+	}
 
 	input, err := readInput(command, commandArgs, in)
 	if err != nil {
@@ -109,6 +116,12 @@ Tools:
                   uc password --length 24 --symbols
   timestamp       Convert a Unix timestamp or an RFC 3339 date.
                   uc timestamp 1710000000
+  api             Open a Postman-style request builder UI (method, URL, headers, body, response).
+                  uc api
+                  Or send a request in one shot from the shell or a script:
+                  uc api "GET https://example.com/health"
+                  First line is '<METHOD> <URL>' (METHOD optional, defaults to GET),
+                  then optional 'Header: value' lines, a blank line, then an optional body.
 `
 
 // isHelp reports whether an argument requests the built-in help text.
@@ -164,7 +177,7 @@ func canonicalCommand(s string) string {
 		return "jwt"
 	case "saml", "saml-decode":
 		return "saml"
-	case "hash", "uuid", "password", "timestamp":
+	case "hash", "uuid", "password", "timestamp", "api":
 		return strings.ToLower(s)
 	default:
 		return ""
@@ -210,6 +223,8 @@ func execute(command, input string) (string, error) {
 		return password(input)
 	case "timestamp":
 		return convertTimestamp(input)
+	case "api":
+		return sendAPIRequest(input)
 	}
 	return "", fmt.Errorf("unknown command %q", command)
 }

@@ -2,7 +2,9 @@
 
 ![Utils CLI](utils-cli.png)
 
-Utils CLI (`uc`) brings the browser utilities from [WSO2 CS Tools](https://wso2-cs.github.io/cs-tools/) to the terminal as a small Go binary. It supports the documented encoders, JSON/XML formatters, JWT and SAML decoding, hashes, UUIDs, passwords, and timestamps. Run `uc --help` for the full command list.
+Utils CLI (`uc`) brings some day-today dev utilities to the terminal as a small Go binary. Run `uc --help` for the full command list.
+
+![uc api — a Postman-style terminal API client](utils-cli-api-client.png)
 
 ## Install
 
