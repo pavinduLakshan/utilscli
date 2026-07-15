@@ -1,4 +1,4 @@
-module github.com/wso2-cs/utilscli
+module github.com/pavinduLakshan/utilscli
 
 go 1.24.0
 

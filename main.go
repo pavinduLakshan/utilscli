@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"compress/flate"
+	"crypto/hmac"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/base32"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
@@ -22,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const version = "0.1.0"
@@ -116,6 +120,8 @@ Tools:
                   uc password --length 24 --symbols
   timestamp       Convert a Unix timestamp or an RFC 3339 date.
                   uc timestamp 1710000000
+  totp            Generate a TOTP code and time left from a Base32 secret; supports -n and -e.
+                  uc totp --secret JBSWY3DPEHPK3PXP -n 6 -e 30
   api             Open a Postman-style request builder UI (method, URL, headers, body, response).
                   uc api
                   Or send a request in one shot from the shell or a script:
@@ -132,8 +138,8 @@ func readInput(command string, args []string, in io.Reader) (string, error) {
 	if len(args) > 0 {
 		return strings.Join(args, " "), nil
 	}
-	// These generators have useful defaults and deliberately need no text input.
-	if command == "uuid" || command == "password" {
+	// These commands parse their own flags and do not need piped positional text.
+	if command == "uuid" || command == "password" || command == "totp" {
 		return "", nil
 	}
 	if file, ok := in.(*os.File); ok {
@@ -177,7 +183,7 @@ func canonicalCommand(s string) string {
 		return "jwt"
 	case "saml", "saml-decode":
 		return "saml"
-	case "hash", "uuid", "password", "timestamp", "api":
+	case "hash", "uuid", "password", "timestamp", "totp", "api":
 		return strings.ToLower(s)
 	default:
 		return ""
@@ -223,6 +229,8 @@ func execute(command, input string) (string, error) {
 		return password(input)
 	case "timestamp":
 		return convertTimestamp(input)
+	case "totp":
+		return totp(input, time.Now())
 	case "api":
 		return sendAPIRequest(input)
 	}
@@ -470,6 +478,169 @@ func password(input string) (string, error) {
 		b[i] = chars[int(n[0])%len(chars)]
 	}
 	return string(b), nil
+}
+
+// totp parses a Base32 shared secret and returns the current RFC 6238 code and time left.
+func totp(input string, now time.Time) (string, error) {
+	secret, digits, expiry, err := parseTOTPOptions(strings.Fields(input))
+	if err != nil {
+		return "", err
+	}
+	if secret == "" {
+		return "", errors.New("secret is required (use -s or --secret)")
+	}
+	if digits < 1 || digits > 10 {
+		return "", errors.New("n must be 1–10")
+	}
+	if expiry < 1 || expiry > 86400 {
+		return "", errors.New("e must be 1–86400 seconds")
+	}
+	key, err := decodeTOTPSecret(secret)
+	if err != nil {
+		return "", err
+	}
+	period := int64(expiry)
+	code := generateTOTP(key, now, period, digits)
+	return fmt.Sprintf("%s\nexpires in %s", code, formatTOTPTimeLeft(totpTimeLeft(now, period))), nil
+}
+
+func parseTOTPOptions(args []string) (secret string, digits int, expiry int, err error) {
+	digits = 6
+	expiry = 30
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-s" || arg == "--secret":
+			if i+1 >= len(args) || isTOTPOption(args[i+1]) {
+				return "", 0, 0, errors.New("secret is required (use -s or --secret)")
+			}
+			var parts []string
+			for i+1 < len(args) && !isTOTPOption(args[i+1]) {
+				i++
+				parts = append(parts, args[i])
+			}
+			secret = strings.Join(parts, "")
+		case strings.HasPrefix(arg, "-s="):
+			secret, i = collectTOTPSecret(strings.TrimPrefix(arg, "-s="), args, i)
+		case strings.HasPrefix(arg, "--secret="):
+			secret, i = collectTOTPSecret(strings.TrimPrefix(arg, "--secret="), args, i)
+		case arg == "-n":
+			value, next, parseErr := readTOTPIntFlag(args, i, "n")
+			if parseErr != nil {
+				return "", 0, 0, parseErr
+			}
+			digits, i = value, next
+		case strings.HasPrefix(arg, "-n="):
+			value, parseErr := strconv.Atoi(strings.TrimPrefix(arg, "-n="))
+			if parseErr != nil {
+				return "", 0, 0, fmt.Errorf("invalid n: %w", parseErr)
+			}
+			digits = value
+		case arg == "-e":
+			value, next, parseErr := readTOTPIntFlag(args, i, "e")
+			if parseErr != nil {
+				return "", 0, 0, parseErr
+			}
+			expiry, i = value, next
+		case strings.HasPrefix(arg, "-e="):
+			value, parseErr := strconv.Atoi(strings.TrimPrefix(arg, "-e="))
+			if parseErr != nil {
+				return "", 0, 0, fmt.Errorf("invalid e: %w", parseErr)
+			}
+			expiry = value
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", 0, 0, fmt.Errorf("unknown TOTP option %q", arg)
+			}
+			return "", 0, 0, fmt.Errorf("unexpected TOTP argument %q; use -s or --secret", arg)
+		}
+	}
+	return secret, digits, expiry, nil
+}
+
+func collectTOTPSecret(firstPart string, args []string, index int) (string, int) {
+	parts := []string{firstPart}
+	for index+1 < len(args) && !isTOTPOption(args[index+1]) {
+		index++
+		parts = append(parts, args[index])
+	}
+	return strings.Join(parts, ""), index
+}
+
+func isTOTPOption(arg string) bool {
+	return arg == "-s" || arg == "--secret" || arg == "-n" || arg == "-e" ||
+		strings.HasPrefix(arg, "-s=") || strings.HasPrefix(arg, "--secret=") ||
+		strings.HasPrefix(arg, "-n=") || strings.HasPrefix(arg, "-e=")
+}
+
+func readTOTPIntFlag(args []string, index int, name string) (int, int, error) {
+	if index+1 >= len(args) || isTOTPOption(args[index+1]) {
+		return 0, index, fmt.Errorf("flag needs an argument: -%s", name)
+	}
+	value, err := strconv.Atoi(args[index+1])
+	if err != nil {
+		return 0, index, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return value, index + 1, nil
+}
+
+func decodeTOTPSecret(secret string) ([]byte, error) {
+	secret = cleanTOTPSecret(secret)
+	if secret == "" {
+		return nil, errors.New("secret is required (use -s or --secret)")
+	}
+	decoder := base32.StdEncoding.WithPadding(base32.NoPadding)
+	key, err := decoder.DecodeString(secret)
+	if err != nil {
+		if remainder := len(secret) % 8; remainder != 0 {
+			secret += strings.Repeat("=", 8-remainder)
+		}
+		key, err = base32.StdEncoding.DecodeString(secret)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("invalid TOTP secret: %w", err)
+	}
+	return key, nil
+}
+
+func cleanTOTPSecret(secret string) string {
+	return strings.Map(func(char rune) rune {
+		if unicode.IsSpace(char) || char == '-' {
+			return -1
+		}
+		return unicode.ToUpper(char)
+	}, secret)
+}
+
+func generateTOTP(key []byte, now time.Time, period int64, digits int) string {
+	counter := uint64(now.Unix() / period)
+	var msg [8]byte
+	binary.BigEndian.PutUint64(msg[:], counter)
+	mac := hmac.New(sha1.New, key)
+	mac.Write(msg[:])
+	sum := mac.Sum(nil)
+	offset := sum[len(sum)-1] & 0x0f
+	code := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
+	modulo := uint64(1)
+	for range digits {
+		modulo *= 10
+	}
+	return fmt.Sprintf("%0*d", digits, uint64(code)%modulo)
+}
+
+func totpTimeLeft(now time.Time, period int64) time.Duration {
+	elapsed := now.Unix() % period
+	if elapsed < 0 {
+		elapsed += period
+	}
+	return time.Duration(period-elapsed) * time.Second
+}
+
+func formatTOTPTimeLeft(left time.Duration) string {
+	if left < time.Second {
+		return "0s"
+	}
+	return left.Truncate(time.Second).String()
 }
 
 // convertTimestamp converts a Unix timestamp or RFC 3339 date to common representations.

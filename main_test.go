@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -50,6 +51,122 @@ func TestPasswordAndUUIDDefaults(t *testing.T) {
 			t.Errorf("%s generated no value", command)
 		}
 	}
+}
+
+func TestTOTPGeneratesRFC6238Code(t *testing.T) {
+	got, err := totp("--secret GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", time.Unix(59, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "287082\nexpires in 1s" {
+		t.Fatalf("TOTP = %q, want code and expiry", got)
+	}
+}
+
+func TestTOTPShortSecretFlag(t *testing.T) {
+	got, err := totp("-s JBSWY3DPEHPK3PXP", time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(totpCode(got)) != 6 {
+		t.Fatalf("TOTP code length = %d, want 6", len(totpCode(got)))
+	}
+}
+
+func TestTOTPSecretMayContainSpaces(t *testing.T) {
+	when := time.Unix(1234567890, 0)
+	got, err := totp("--secret JBSW Y3DP EHPK 3PXP", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := totp("--secret JBSWY3DPEHPK3PXP", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("spaced TOTP = %q, want compact-secret TOTP %q", got, want)
+	}
+}
+
+func TestTOTPSpacedSecretWithTrailingOptions(t *testing.T) {
+	when := time.Unix(1234567890, 0)
+	got, err := totp("--secret JBSW Y3DP EHPK 3PXP -n 8 -e 30", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := totp("--secret JBSWY3DPEHPK3PXP -n 8 -e 30", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("spaced TOTP with options = %q, want compact-secret TOTP %q", got, want)
+	}
+}
+
+func TestTOTPCustomDigits(t *testing.T) {
+	got, err := totp("--secret JBSWY3DPEHPK3PXP -n 8", time.Unix(1234567890, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(totpCode(got)) != 8 {
+		t.Fatalf("TOTP code length = %d, want 8", len(totpCode(got)))
+	}
+}
+
+func TestTOTPCustomExpiry(t *testing.T) {
+	when := time.Unix(59, 0)
+	got, err := totp("--secret GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ -e 60", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := generateTOTP([]byte("12345678901234567890"), when, 60, 6)
+	if got != want+"\nexpires in 1s" {
+		t.Fatalf("TOTP = %q, want custom-expiry TOTP code and expiry", got)
+	}
+}
+
+func TestTOTPReportsExpiryTimeLeft(t *testing.T) {
+	got, err := totp("--secret JBSWY3DPEHPK3PXP", time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(got, "\nexpires in 29s") {
+		t.Fatalf("TOTP = %q, want 29 seconds remaining", got)
+	}
+}
+
+func TestTOTPRejectsInvalidOptions(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"--secret JBSWY3DPEHPK3PXP -n 0", "n must be 1–10"},
+		{"--secret JBSWY3DPEHPK3PXP -n 11", "n must be 1–10"},
+		{"--secret JBSWY3DPEHPK3PXP -e 0", "e must be 1–86400 seconds"},
+		{"--secret JBSWY3DPEHPK3PXP -e 86401", "e must be 1–86400 seconds"},
+		{"--secret JBSWY3DPEHPK3PXP -n", "flag needs an argument: -n"},
+	}
+	for _, tt := range tests {
+		_, err := totp(tt.input, time.Unix(0, 0))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("totp(%q) error = %v, want %q", tt.input, err, tt.want)
+		}
+	}
+}
+
+func TestTOTPMissingSecret(t *testing.T) {
+	var out bytes.Buffer
+	err := run([]string{"totp"}, strings.NewReader(""), &out)
+	if err == nil {
+		t.Fatal("expected missing secret error")
+	}
+	if !strings.Contains(err.Error(), "secret is required") {
+		t.Fatalf("error = %q, want missing secret", err)
+	}
+}
+
+func totpCode(output string) string {
+	return strings.SplitN(output, "\n", 2)[0]
 }
 
 // TestInteractiveMenu verifies the terminal UI includes its main panels.
@@ -236,6 +353,43 @@ func TestTabCyclesThroughOutput(t *testing.T) {
 	}
 }
 
+func TestTUITOTPFormRunsWithDigitsAndExpiry(t *testing.T) {
+	state := tuiState{
+		selected:   tuiToolIndex("totp"),
+		totpSecret: []rune("JBSWY3DPEHPK3PXP"),
+		totpDigits: []rune("8"),
+		totpExpiry: []rune("60"),
+	}
+	runSelectedTool(&state)
+	code := totpCode(state.result)
+	if len(code) != 8 {
+		t.Fatalf("TOTP code length = %d, want 8; result %q", len(code), state.result)
+	}
+	if !strings.Contains(state.result, "\nexpires in ") {
+		t.Fatalf("TOTP result = %q, want expiry time left", state.result)
+	}
+}
+
+func TestTUITOTPFormFocusCycle(t *testing.T) {
+	state := tuiState{selected: tuiToolIndex("totp"), focus: focusTools}
+	advanceFocus(&state)
+	if state.focus != focusTOTPSecret {
+		t.Fatalf("focus = %v, want TOTP secret", state.focus)
+	}
+	advanceFocus(&state)
+	if state.focus != focusTOTPDigits {
+		t.Fatalf("focus = %v, want TOTP digits", state.focus)
+	}
+	advanceFocus(&state)
+	if state.focus != focusTOTPExpiry {
+		t.Fatalf("focus = %v, want TOTP expiry", state.focus)
+	}
+	advanceFocus(&state)
+	if state.focus != focusOutput {
+		t.Fatalf("focus = %v, want output", state.focus)
+	}
+}
+
 func simulationText(screen tcell.SimulationScreen, x, y, width int) string {
 	runes := make([]rune, 0, width)
 	for column := x; column < x+width; column++ {
@@ -243,6 +397,15 @@ func simulationText(screen tcell.SimulationScreen, x, y, width int) string {
 		runes = append(runes, char)
 	}
 	return string(runes)
+}
+
+func tuiToolIndex(command string) int {
+	for index, tool := range tuiTools {
+		if tool.command == command {
+			return index
+		}
+	}
+	return -1
 }
 
 func TestInitialTUIFocusIsTools(t *testing.T) {

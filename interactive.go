@@ -33,20 +33,26 @@ var tuiTools = []toolDefinition{
 	{"uuid", "Generate a UUID"},
 	{"password", "Generate a password"},
 	{"timestamp", "Convert a timestamp or date"},
-	{"api", "Send an HTTP request and view the response"},
+	{"totp", "Generate a TOTP code and time left"},
 }
 
 type tuiState struct {
-	selected     int
-	input        []rune
-	cursor       int
-	inputWidth   int
-	focus        tuiFocus
-	result       string
-	outputOffset int
-	outputWidth  int
-	outputHeight int
-	status       string
+	selected         int
+	input            []rune
+	cursor           int
+	totpSecret       []rune
+	totpSecretCursor int
+	totpDigits       []rune
+	totpDigitsCursor int
+	totpExpiry       []rune
+	totpExpiryCursor int
+	inputWidth       int
+	focus            tuiFocus
+	result           string
+	outputOffset     int
+	outputWidth      int
+	outputHeight     int
+	status           string
 }
 
 type tuiFocus int
@@ -55,6 +61,9 @@ const (
 	focusInput tuiFocus = iota
 	focusTools
 	focusOutput
+	focusTOTPSecret
+	focusTOTPDigits
+	focusTOTPExpiry
 )
 
 type toolInputMode int
@@ -62,12 +71,15 @@ type toolInputMode int
 const (
 	inputText toolInputMode = iota
 	inputNone
+	inputTOTP
 )
 
 func selectedInputMode(state *tuiState) toolInputMode {
 	switch tuiTools[state.selected].command {
 	case "uuid", "password":
 		return inputNone
+	case "totp":
+		return inputTOTP
 	default:
 		return inputText
 	}
@@ -185,8 +197,11 @@ func handleTUIKey(state *tuiState, event *tcell.EventKey) bool {
 			*cursor++
 		}
 	case tcell.KeyEnter:
-		if input, cursor := activeInput(state); input != nil {
+		if state.focus == focusInput {
+			input, cursor := activeInput(state)
 			insertInputRune(input, cursor, '\n')
+		} else if isTOTPInputFocus(state.focus) {
+			advanceFocus(state)
 		} else if selectedInputMode(state) == inputNone {
 			runSelectedTool(state)
 		} else {
@@ -225,6 +240,12 @@ func selectTool(state *tuiState, selected int) {
 func clearToolState(state *tuiState) {
 	state.input = nil
 	state.cursor = 0
+	state.totpSecret = nil
+	state.totpSecretCursor = 0
+	state.totpDigits = nil
+	state.totpDigitsCursor = 0
+	state.totpExpiry = nil
+	state.totpExpiryCursor = 0
 	state.result = ""
 	state.outputOffset = 0
 	state.status = ""
@@ -236,6 +257,19 @@ func advanceFocus(state *tuiState) {
 		if state.focus == focusTools {
 			state.focus = focusOutput
 		} else {
+			state.focus = focusTools
+		}
+	case inputTOTP:
+		switch state.focus {
+		case focusTools:
+			state.focus = focusTOTPSecret
+		case focusTOTPSecret:
+			state.focus = focusTOTPDigits
+		case focusTOTPDigits:
+			state.focus = focusTOTPExpiry
+		case focusTOTPExpiry:
+			state.focus = focusOutput
+		default:
 			state.focus = focusTools
 		}
 	default:
@@ -251,6 +285,9 @@ func advanceFocus(state *tuiState) {
 }
 
 func firstInputFocus(mode toolInputMode) tuiFocus {
+	if mode == inputTOTP {
+		return focusTOTPSecret
+	}
 	return focusInput
 }
 
@@ -258,9 +295,19 @@ func activeInput(state *tuiState) (*[]rune, *int) {
 	switch state.focus {
 	case focusInput:
 		return &state.input, &state.cursor
+	case focusTOTPSecret:
+		return &state.totpSecret, &state.totpSecretCursor
+	case focusTOTPDigits:
+		return &state.totpDigits, &state.totpDigitsCursor
+	case focusTOTPExpiry:
+		return &state.totpExpiry, &state.totpExpiryCursor
 	default:
 		return nil, nil
 	}
+}
+
+func isTOTPInputFocus(focus tuiFocus) bool {
+	return focus == focusTOTPSecret || focus == focusTOTPDigits || focus == focusTOTPExpiry
 }
 
 func insertInputRune(input *[]rune, cursor *int, char rune) {
@@ -273,6 +320,9 @@ func insertInputRune(input *[]rune, cursor *int, char rune) {
 func runSelectedTool(state *tuiState) {
 	tool := tuiTools[state.selected]
 	input := string(state.input)
+	if tool.command == "totp" {
+		input = totpInput(state)
+	}
 	state.outputOffset = 0
 	state.status = ""
 	result, err := execute(tool.command, input)
@@ -281,6 +331,19 @@ func runSelectedTool(state *tuiState) {
 		return
 	}
 	state.result = result
+}
+
+func totpInput(state *tuiState) string {
+	secret := strings.TrimSpace(string(state.totpSecret))
+	digits := strings.TrimSpace(string(state.totpDigits))
+	expiry := strings.TrimSpace(string(state.totpExpiry))
+	if digits == "" {
+		digits = "6"
+	}
+	if expiry == "" {
+		expiry = "30"
+	}
+	return fmt.Sprintf("--secret %s -n %s -e %s", secret, digits, expiry)
 }
 
 func drawTUI(screen tcell.Screen, state *tuiState) {
@@ -312,6 +375,8 @@ func drawTUI(screen tcell.Screen, state *tuiState) {
 	switch selectedInputMode(state) {
 	case inputNone:
 		drawNoInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle, mutedStyle)
+	case inputTOTP:
+		drawTOTPInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	default:
 		drawTextInputView(screen, state, rightX+2, rightWidth-4, height, titleStyle, activeStyle)
 	}
@@ -344,6 +409,20 @@ func drawTextInputView(screen tcell.Screen, state *tuiState, x, width, screenHei
 	drawTitle(screen, x, 4, width, "Input", state.focus == focusInput, titleStyle, activeStyle, " (active · Tab switches focus)")
 	drawInput(screen, state.input, state.cursor, state.focus == focusInput, x, 5, width, inputHeight, "Type input here")
 	drawOutput(screen, state, x, 6+inputHeight, width, screenHeight-(9+inputHeight), titleStyle, activeStyle)
+}
+
+func drawTOTPInputView(screen tcell.Screen, state *tuiState, x, width, screenHeight int, titleStyle, activeStyle tcell.Style) {
+	fieldWidth := width
+	if width > 30 {
+		fieldWidth = min(width, 44)
+	}
+	drawTitle(screen, x, 4, width, "Secret", state.focus == focusTOTPSecret, titleStyle, activeStyle, " (active · Tab switches focus)")
+	drawInput(screen, state.totpSecret, state.totpSecretCursor, state.focus == focusTOTPSecret, x, 5, fieldWidth, 1, "Base32 secret")
+	drawTitle(screen, x, 7, width, "Length", state.focus == focusTOTPDigits, titleStyle, activeStyle, " (default 6)")
+	drawInput(screen, state.totpDigits, state.totpDigitsCursor, state.focus == focusTOTPDigits, x, 8, 10, 1, "6")
+	drawTitle(screen, x+14, 7, width-14, "Expiry", state.focus == focusTOTPExpiry, titleStyle, activeStyle, " (default 30s)")
+	drawInput(screen, state.totpExpiry, state.totpExpiryCursor, state.focus == focusTOTPExpiry, x+14, 8, 14, 1, "30")
+	drawOutput(screen, state, x, 11, width, screenHeight-14, titleStyle, activeStyle)
 }
 
 func drawNoInputView(screen tcell.Screen, state *tuiState, x, width, screenHeight int, titleStyle, activeStyle, mutedStyle tcell.Style) {
